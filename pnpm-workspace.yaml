@@ -1,0 +1,4 @@
+ignoredBuiltDependencies:
+  - esbuild
+  - protobufjs
+  - ytdlp-nodejs

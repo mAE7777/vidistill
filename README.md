@@ -1,4 +1,4 @@
-# vidi
+# vidistill
 
 Video intelligence distiller — turn any video into structured notes, transcripts, and insights using Gemini.
 
@@ -7,7 +7,7 @@ Feed it a YouTube URL or local video file. It analyzes the content through multi
 ## Install
 
 ```
-npm install -g vidi
+npm install -g vidistill
 ```
 
 Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/).
@@ -15,7 +15,7 @@ Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/).
 ## Usage
 
 ```
-vidi [input] [options]
+vidistill [input] [options]
 ```
 
 **Arguments:**
@@ -25,40 +25,40 @@ vidi [input] [options]
 **Options:**
 
 - `-c, --context` — context about the video (e.g. "CS lecture", "product demo")
-- `-o, --output` — output directory (default: `./vidi-output/`)
+- `-o, --output` — output directory (default: `./vidistill-output/`)
 
 **Examples:**
 
 ```bash
 # Interactive mode — prompts for everything
-vidi
+vidistill
 
 # YouTube video
-vidi "https://youtube.com/watch?v=dQw4w9WgXcQ"
+vidistill "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Local file with context
-vidi ./lecture.mp4 --context "distributed systems lecture"
+vidistill ./lecture.mp4 --context "distributed systems lecture"
 
 # Custom output directory
-vidi ./demo.mp4 -o ./notes/
+vidistill ./demo.mp4 -o ./notes/
 ```
 
 ## API Key
 
-vidi needs a Gemini API key. It checks these sources in order:
+vidistill needs a Gemini API key. It checks these sources in order:
 
 1. `GEMINI_API_KEY` environment variable
-2. `~/.vidi/config.json`
+2. `~/.vidistill/config.json`
 3. Interactive prompt (with option to save for next time)
 
 Get a key at [ai.google.dev](https://ai.google.dev/).
 
 ## Output
 
-vidi creates a folder per video with structured files:
+vidistill creates a folder per video with structured files:
 
 ```
-vidi-output/my-video/
+vidistill-output/my-video/
 ├── guide.md           # overview and navigation
 ├── transcript.md      # full timestamped transcript
 ├── combined.md        # transcript + visual notes merged
