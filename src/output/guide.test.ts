@@ -91,18 +91,19 @@ describe('writeGuide', () => {
     expect(result).toContain('unknown');
   });
 
-  it('contains files table with synthesis files', () => {
+  it('contains files table with actually generated files', () => {
     const result = writeGuide({
       title: 'Test',
       source: 's',
       duration: 60,
       pipelineResult: makePipelineResult({ synthesisResult: SYNTHESIS }),
+      filesGenerated: ['transcript.md', 'notes.md', 'code/src/index.ts'],
     });
-    expect(result).toContain('src/index.ts');
-    expect(result).toContain('tsconfig.json');
+    expect(result).toContain('transcript.md');
+    expect(result).toContain('code/src/index.ts');
   });
 
-  it('shows placeholder when no files to generate', () => {
+  it('shows placeholder when no files generated', () => {
     const result = writeGuide({
       title: 'Test',
       source: 's',
@@ -111,7 +112,7 @@ describe('writeGuide', () => {
         synthesisResult: { ...SYNTHESIS, files_to_generate: [] },
       }),
     });
-    expect(result).toContain('No files identified');
+    expect(result).toContain('No files generated');
   });
 
   it('contains summary from synthesis overview', () => {

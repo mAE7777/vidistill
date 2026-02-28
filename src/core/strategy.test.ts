@@ -79,6 +79,13 @@ describe('determineStrategy', () => {
       );
       expect(result.passes).not.toContain('chat');
     });
+
+    it('includes code pass when hasCode is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'meeting', visualContent: { ...makeProfile().visualContent, hasCode: true } })
+      );
+      expect(result.passes).toContain('code');
+    });
   });
 
   describe('lecture type', () => {
@@ -87,11 +94,22 @@ describe('determineStrategy', () => {
       expect(result.passes).toContain('implicit');
     });
 
-    it('does not include code, people, or chat passes', () => {
+    it('does not include people or chat passes', () => {
       const result = determineStrategy(makeProfile({ type: 'lecture' }));
-      expect(result.passes).not.toContain('code');
       expect(result.passes).not.toContain('people');
       expect(result.passes).not.toContain('chat');
+    });
+
+    it('includes code pass when hasCode is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'lecture', visualContent: { ...makeProfile().visualContent, hasCode: true } })
+      );
+      expect(result.passes).toContain('code');
+    });
+
+    it('does not include code pass when hasCode is false', () => {
+      const result = determineStrategy(makeProfile({ type: 'lecture' }));
+      expect(result.passes).not.toContain('code');
     });
   });
 

@@ -38,9 +38,18 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   const optional = new Set<string>();
 
   if (synthesisResult != null) {
-    // Synthesis explicitly lists what to generate
+    // Known output file names that map directly to writers
+    const knownOutputFiles = new Set([
+      'transcript.md', 'combined.md', 'notes.md', 'people.md',
+      'chat.md', 'links.md', 'action-items.md', 'insights.md', 'code/',
+    ]);
     for (const f of synthesisResult.files_to_generate) {
-      optional.add(f);
+      if (knownOutputFiles.has(f)) {
+        optional.add(f);
+      } else {
+        // Unrecognized filenames are code files — trigger the code writer
+        optional.add('code/');
+      }
     }
   } else {
     // Fallback: generate everything for which pass data exists
@@ -239,7 +248,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 5: guide.md — always generated, written LAST (needs full filesGenerated list)
   try {
-    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult });
+    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated });
     await writeOutputFile('guide.md', content);
   } catch (err) {
     errors.push(`guide.md: ${String(err)}`);

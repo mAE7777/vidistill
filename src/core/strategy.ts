@@ -7,11 +7,13 @@ export function determineStrategy(profile: VideoProfile): PassStrategy {
 
   const { type, visualContent, audioContent, complexity, recommendations } = profile;
 
+  // Code pass runs for any video type when code is visible on screen
+  if (visualContent.hasCode) {
+    passes.add('code');
+  }
+
   switch (type) {
     case 'coding':
-      if (visualContent.hasCode) {
-        passes.add('code');
-      }
       break;
     case 'meeting':
       passes.add('people');

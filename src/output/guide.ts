@@ -6,13 +6,20 @@ export interface WriteGuideParams {
   source: string;
   duration: number;
   pipelineResult: PipelineResult;
+  filesGenerated?: string[];
 }
 
-function renderFilesTable(synthesisResult: SynthesisResult | undefined): string {
-  if (synthesisResult == null || synthesisResult.files_to_generate.length === 0) {
-    return '_No files identified._';
+function renderFilesTable(filesGenerated: string[] | undefined): string {
+  if (filesGenerated == null || filesGenerated.length === 0) {
+    return '_No files generated._';
   }
-  const rows = synthesisResult.files_to_generate.map((f) => `| ${f} |`).join('\n');
+  // Exclude internal files from the table
+  const exclude = new Set(['metadata.json', 'guide.md']);
+  const visible = filesGenerated.filter((f) => !exclude.has(f) && !f.startsWith('raw/'));
+  if (visible.length === 0) {
+    return '_No files generated._';
+  }
+  const rows = visible.map((f) => `| ${f} |`).join('\n');
   return `| File |\n|------|\n${rows}`;
 }
 
@@ -73,7 +80,7 @@ function renderIncompletePasses(pipelineResult: PipelineResult): string {
 }
 
 export function writeGuide(params: WriteGuideParams): string {
-  const { title, source, duration, pipelineResult } = params;
+  const { title, source, duration, pipelineResult, filesGenerated } = params;
   const { synthesisResult, videoProfile } = pipelineResult;
 
   const overview = synthesisResult?.overview ?? '_No summary available — synthesis pass did not run or produced no output._';
@@ -90,7 +97,7 @@ export function writeGuide(params: WriteGuideParams): string {
     '',
     '## Files',
     '',
-    renderFilesTable(synthesisResult),
+    renderFilesTable(filesGenerated),
     '',
     '## Summary',
     '',
