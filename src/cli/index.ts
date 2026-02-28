@@ -103,7 +103,7 @@ const main = defineCommand({
       const secs = Math.round(duration % 60);
       log.info(`Duration: ${pc.cyan(`${mins}m ${secs}s`)} (${Math.round(duration)}s)`);
 
-      const model = MODELS[0].id;
+      const model = MODELS.flash;
       const outputDir = resolve(args.output);
       const slug = slugify(videoTitle);
       const finalOutputDir = `${outputDir}/${slug}`;
@@ -170,7 +170,8 @@ const main = defineCommand({
         }
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const raw = err instanceof Error ? err.message : String(err);
+      const message = raw.split('\n')[0].slice(0, 200);
       log.error(pc.red(message));
       process.exit(1);
     }

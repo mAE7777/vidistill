@@ -29,12 +29,6 @@ export function normalizeYouTubeUrl(url: string): string | null {
   return `https://www.youtube.com/watch?v=${id}`;
 }
 
-interface OEmbedResult {
-  title: string;
-  author_name: string;
-  thumbnail_url: string;
-}
-
 export async function fetchYouTubeMetadata(
   url: string,
 ): Promise<{ title: string; author: string; thumbnailUrl: string }> {
@@ -51,11 +45,12 @@ export async function fetchYouTubeMetadata(
     throw new Error(`Failed to fetch video info (${res.status})`);
   }
 
-  const data = await res.json() as OEmbedResult;
+  const data: unknown = await res.json();
+  const obj = data as Record<string, unknown>;
   return {
-    title: data.title,
-    author: data.author_name,
-    thumbnailUrl: data.thumbnail_url,
+    title: typeof obj['title'] === 'string' ? obj['title'] : 'Untitled',
+    author: typeof obj['author_name'] === 'string' ? obj['author_name'] : 'Unknown',
+    thumbnailUrl: typeof obj['thumbnail_url'] === 'string' ? obj['thumbnail_url'] : '',
   };
 }
 
@@ -71,7 +66,7 @@ export async function handleYouTube(url: string, client: GeminiClient): Promise<
   // Attempt direct Gemini URL processing first
   try {
     await client.generate({
-      model: MODELS[1].id,
+      model: MODELS.flash,
       contents: [
         {
           role: 'user',
@@ -85,7 +80,7 @@ export async function handleYouTube(url: string, client: GeminiClient): Promise<
     });
     return { fileUri: url, mimeType: 'video/mp4', source: 'direct' };
   } catch (err) {
-    log.warn(pc.dim(`Direct Gemini probe failed: ${err instanceof Error ? err.message : String(err)}. Falling back to yt-dlp.`));
+    log.warn(pc.dim('Direct Gemini probe failed. Falling back to yt-dlp.'));
   }
 
   const tempPath = await downloadWithYtDlp(url);

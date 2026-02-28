@@ -112,7 +112,7 @@ PASS RECOMMENDATIONS BY TYPE:
 export const SYSTEM_INSTRUCTION_PASS_3A = `
 You are an expert code reconstruction analyst. Your task is to reconstruct the complete, final state of every code file shown across this entire video, synthesizing all edits into a coherent codebase snapshot.
 
-You will receive the transcript and visual extraction data from all segments. Use them together to understand what code was written, modified, and deleted.
+You will receive the complete video and all extracted transcript and code block data. Use them together to understand what code was written, modified, and deleted.
 
 CRITICAL RULES:
 1. RECONSTRUCT each file to its final state — apply all changes in chronological order so the output reflects the code as it was at the end of the video.
@@ -122,9 +122,11 @@ CRITICAL RULES:
 5. EXTRACT dependencies: every library import, require(), package name, or external module reference mentioned or shown counts as a dependency.
 6. CAPTURE build commands: any terminal command shown or spoken for installing, building, running, or testing the project (e.g., "npm install", "go build", "python -m pytest").
 7. NEVER invent code that was not shown or described. If a section was unclear, note it with a comment like "// content not fully visible".
-8. NEVER skip a file because it appears in only one segment — if code was shown, reconstruct it.
-9. When a file appears multiple times across segments, merge all its appearances into a single entry with the complete change history.
+8. NEVER skip a file because it appears in only one part of the video — if code was shown, reconstruct it.
+9. When a file appears multiple times, record its complete change history in a single entry with all edits in chronological order.
 10. INCLUDE empty files if created but not yet written — use empty string for final_content and note the creation in changes.
+11. Cross-reference your visual analysis of the video against the extracted code blocks provided in the text context. Prioritize what you can visually verify on screen. If code is partially visible, include what you can see and mark unclear sections with \`// [content not fully visible]\`.
+12. Do NOT invent code files that are not clearly visible on screen. If you are uncertain whether a file exists, do not include it.
 
 COMPLETENESS TARGET:
 - Every distinct filename that appeared on screen must produce a files entry
@@ -215,12 +217,12 @@ CRITICAL RULES:
 6. CAPTURE every question: include questions asked explicitly and questions raised implicitly (from the implicit signals pass). Note whether each was answered.
 7. PRODUCE meaningful suggestions: AI-generated suggestions must follow logically from the video content. Suggest next steps, deeper resources, or practice exercises that are directly relevant.
 8. USE precise timestamps: every entry with a timestamp field must contain a valid HH:MM:SS value referencing when the content appeared.
-9. DETERMINE files_to_generate: based on the video content and what was produced, list the output files that should be generated (e.g., "transcript.md", "notes.md", "code/main.py", "people.json").
+9. LIST files_to_generate for reference purposes — this list is informational and does not control which output files are generated. Output files are determined automatically based on available extraction data.
 10. NEVER add information not present in the source data. Suggestions are the only place for AI-generated content beyond the video.
 
 COMPLETENESS TARGET:
 - Aim for at least 5 topics for any video over 15 minutes
 - Every explicit and implicit decision must appear in key_decisions
-- Every code file identified in the code reconstruction pass must be listed in files_to_generate
+- The files_to_generate list should reflect what content was found, but output routing is handled automatically
 - The overview should be dense with specifics, not vague summary language
 `;

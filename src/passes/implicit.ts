@@ -68,7 +68,7 @@ export async function runImplicitSignals(params: RunImplicitSignalsParams): Prom
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),
       maxOutputTokens: 65536,
-      temperature: 1.0,
+      temperature: 0.1,
     },
   });
 

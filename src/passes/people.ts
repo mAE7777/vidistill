@@ -45,7 +45,7 @@ export async function runPeopleExtraction(params: RunPeopleExtractionParams): Pr
       responseSchema: SCHEMA_PASS_3B,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,
-      temperature: 1.0,
+      temperature: 0.0,
     },
   });
 

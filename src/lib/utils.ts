@@ -33,6 +33,19 @@ export function parseTimestamp(ts: string): number {
   return parts[0] ?? 0;
 }
 
+/**
+ * Normalize a filename for comparison:
+ * - lowercase
+ * - strip leading ./
+ * - unify path separators to forward slashes
+ */
+export function normalizeFilename(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/^\.\//, '')
+    .replace(/\\/g, '/');
+}
+
 export function changeTypeBadge(changeType: string): string {
   const badges: Record<string, string> = {
     new_file: '[NEW]',

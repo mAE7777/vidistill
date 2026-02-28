@@ -6,6 +6,7 @@ import type {
   VideoProfile,
   PeopleExtraction,
   SynthesisResult,
+  CodeReconstruction,
 } from '../types/index.js';
 
 function makeClient(result: unknown): GeminiClient {
@@ -74,25 +75,26 @@ const SEGMENT_WITH_CODE: SegmentResult = {
     ],
     screen_timeline: [],
   },
-  pass3a: {
-    files: [
-      {
-        filename: 'index.ts',
-        language: 'typescript',
-        final_content: 'const app = express()\napp.listen(3000)',
-        changes: [
-          {
-            timestamp: '00:01:30',
-            change_type: 'create',
-            description: 'Initial file',
-            diff_summary: 'Added app setup',
-          },
-        ],
-      },
-    ],
-    dependencies_mentioned: ['express'],
-    build_commands: ['npm install'],
-  },
+};
+
+const CODE_RECONSTRUCTION: CodeReconstruction = {
+  files: [
+    {
+      filename: 'index.ts',
+      language: 'typescript',
+      final_content: 'const app = express()\napp.listen(3000)',
+      changes: [
+        {
+          timestamp: '00:01:30',
+          change_type: 'create',
+          description: 'Initial file',
+          diff_summary: 'Added app setup',
+        },
+      ],
+    },
+  ],
+  dependencies_mentioned: ['express'],
+  build_commands: ['npm install'],
 };
 
 const SEGMENT_WITH_CHAT: SegmentResult = {
@@ -274,7 +276,7 @@ describe('runSynthesis', () => {
     expect(call.model).toBe('gemini-2.5-flash');
     expect(call.config.responseMimeType).toBe('application/json');
     expect(call.config.maxOutputTokens).toBe(65536);
-    expect(call.config.temperature).toBe(1.0);
+    expect(call.config.temperature).toBe(0.1);
   });
 
   it('compiles segment transcript entries into context text', async () => {
@@ -321,13 +323,14 @@ describe('runSynthesis', () => {
     expect(text).toContain('[00:02:00] slide: Introduction to Express');
   });
 
-  it('compiles pass3a (code reconstruction) into context text', async () => {
+  it('compiles codeReconstruction (pipeline-level) into context text', async () => {
     const client = makeClient(VALID_RESULT);
     await runSynthesis({
       client,
       model: 'gemini-2.5-flash',
       segmentResults: [SEGMENT_WITH_CODE],
       videoProfile: VIDEO_PROFILE,
+      codeReconstruction: CODE_RECONSTRUCTION,
     });
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -480,7 +483,7 @@ describe('runSynthesis', () => {
     expect(text).toContain('=== SEGMENT 2 (00:10:00 - 00:20:00) ===');
   });
 
-  it('omits code reconstruction section when pass3a is absent', async () => {
+  it('omits code reconstruction section when codeReconstruction is absent', async () => {
     const client = makeClient(VALID_RESULT);
     const segWithoutCode: SegmentResult = {
       index: 0,

@@ -223,7 +223,6 @@ export interface SegmentResult {
   index: number;
   pass1: Pass1Result | null;
   pass2: Pass2Result | null;
-  pass3a?: CodeReconstruction | null;
   pass3c?: ChatExtraction | null;
   pass3d?: ImplicitSignals | null;
 }
@@ -236,6 +235,8 @@ export interface PipelineResult {
   strategy?: PassStrategy;
   synthesisResult?: SynthesisResult;
   peopleExtraction?: PeopleExtraction | null;
+  codeReconstruction?: CodeReconstruction | null;
+  uncertainCodeFiles?: string[];
   /** Set when pipeline was interrupted mid-run. Lists pass names that did not complete. */
   interrupted?: string[];
 }

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.0] - 2026-02-28
+
+### Added
+- Multi-run consensus voting for code reconstruction — 3 independent runs, 2-agreement threshold eliminates hallucinated files
+- 5-gate validation pipeline for extracted code: structural integrity, filesystem safety, cross-reference against visual observations, consensus agreement, and content quality
+- Whole-video code reconstruction — processes entire video as a single pass instead of per-segment, eliminating cross-segment duplication and context loss
+- Pro-tier model (Gemini 2.5 Pro) for code reconstruction and synthesis passes; flash tier for all extraction passes
+- Deterministic output file routing — which files are generated is determined by pass data presence, never by LLM suggestions
+- Uncertain file markers in code output for files that pass consensus but can't be cross-referenced against screen observations
+- Context compilation with temporal segment headers for whole-video passes processing multi-segment videos
+
+### Changed
+- Code pass runs once after all segments complete (previously ran per-segment and merged)
+- Temperature tuned per pass: 0.0 for extraction (transcript, visual, code, people, chat), 0.1 for reasoning (implicit, synthesis), 0.2 for scene analysis
+- Model constants refactored from array indexing to named object (`MODELS.flash`, `MODELS.pro`)
+- Code context truncation prioritizes code-bearing segments and truncates at newline boundaries
+
+### Fixed
+- Runtime validation for YouTube oEmbed API responses replaces unsafe type cast
+- Error messages sanitized to cap length and prevent internal detail leakage
+- Duplicate filename normalization logic extracted to shared utility
+- Unicode-aware tokenizer for consensus content selection (was ASCII-only)
+- Consensus config unified as single source of truth in pipeline orchestrator
+- Dead code removed: unused segmentIndex field, unnecessary type casts, stale optional chaining
+
 ## [0.1.1] - 2026-02-28
 
 ### Fixed

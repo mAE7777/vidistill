@@ -346,16 +346,26 @@ describe('writeRawOutput', () => {
     expect(result.has('pass2-seg0.json')).toBe(false);
   });
 
-  it('includes pass3a-segN.json when code reconstruction is present', () => {
-    const seg = makeSegment(0, { pass3a: CODE_RECONSTRUCTION });
-    const result = writeRawOutput(makePipelineResult({ segments: [seg] }));
-    expect(result.has('pass3a-seg0.json')).toBe(true);
+  it('includes pass3a.json when codeReconstruction is present at pipeline level', () => {
+    const result = writeRawOutput(makePipelineResult({ codeReconstruction: CODE_RECONSTRUCTION }));
+    expect(result.has('pass3a.json')).toBe(true);
   });
 
-  it('does not include pass3a-segN.json when pass3a is absent or null', () => {
-    const seg = makeSegment(0);
-    const result = writeRawOutput(makePipelineResult({ segments: [seg] }));
-    expect(result.has('pass3a-seg0.json')).toBe(false);
+  it('does not include pass3a.json when codeReconstruction is absent', () => {
+    const result = writeRawOutput(makePipelineResult());
+    expect(result.has('pass3a.json')).toBe(false);
+  });
+
+  it('does not include pass3a.json when codeReconstruction is null', () => {
+    const result = writeRawOutput(makePipelineResult({ codeReconstruction: null }));
+    expect(result.has('pass3a.json')).toBe(false);
+  });
+
+  it('pass3a.json content is valid JSON matching codeReconstruction', () => {
+    const result = writeRawOutput(makePipelineResult({ codeReconstruction: CODE_RECONSTRUCTION }));
+    const content = result.get('pass3a.json');
+    expect(content).toBeDefined();
+    expect(JSON.parse(content!)).toEqual(CODE_RECONSTRUCTION);
   });
 
   it('includes pass3b-people.json when peopleExtraction is present', () => {

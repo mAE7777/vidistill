@@ -23,7 +23,11 @@ export function createProgressDisplay(): ProgressDisplay {
     } else if (status.phase === 'pass2') {
       s.message(`Pass 2: Visual extraction (${segNum}/${total} segments)`);
     } else if (status.phase === 'pass3a') {
-      s.message(`Code reconstruction (${segNum}/${total} segments)`);
+      if (total > 1) {
+        s.message(`Reconstructing code (run ${segNum}/${total})...`);
+      } else {
+        s.message('Reconstructing code...');
+      }
     } else if (status.phase === 'pass3b') {
       s.message('People extraction...');
     } else if (status.phase === 'pass3c') {

@@ -10,6 +10,8 @@ import { runSynthesis } from '../passes/synthesis.js';
 import { determineStrategy } from './strategy.js';
 import { createSegmentPlan } from './segmenter.js';
 import { MODELS } from '../gemini/models.js';
+import { runCodeConsensus } from './consensus.js';
+import { validateCodeReconstruction } from './validator.js';
 import type {
   RunPipelineConfig,
   PipelineResult,
@@ -113,7 +115,6 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
   let pass1RanOnce = false;
   let pass2RanOnce = false;
-  let pass3aRanOnce = false;
   let pass3cRanOnce = false;
   let pass3dRanOnce = false;
 
@@ -181,39 +182,6 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
     onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'done' });
 
-    // Pass 3a: Code reconstruction (per segment)
-    let pass3a: CodeReconstruction | null | undefined;
-    if (strategy.passes.includes('code')) {
-      onProgress?.({ phase: 'pass3a', segment: i, totalSegments: n, status: 'running' });
-      const pass3aAttempt = await withRetry(
-        () =>
-          rateLimiter.execute(
-            () =>
-              runCodeReconstruction({
-                client,
-                fileUri,
-                mimeType,
-                segment,
-                model: MODELS[0].id,
-                resolution,
-                pass1Result: pass1 ?? undefined,
-                pass2Result: pass2 ?? undefined,
-              }),
-            { onWait },
-          ),
-        `segment ${i} pass3a`,
-      );
-      if (pass3aAttempt.error !== null) {
-        log.warn(pass3aAttempt.error);
-        errors.push(pass3aAttempt.error);
-        pass3a = null;
-      } else {
-        pass3a = pass3aAttempt.result;
-        pass3aRanOnce = true;
-      }
-      onProgress?.({ phase: 'pass3a', segment: i, totalSegments: n, status: 'done' });
-    }
-
     // Pass 3c: Chat extraction (per segment)
     let pass3c: ChatExtraction | null | undefined;
     if (strategy.passes.includes('chat')) {
@@ -227,7 +195,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
                 fileUri,
                 mimeType,
                 segment,
-                model: MODELS[1].id,
+                model: MODELS.flash,
                 resolution,
                 pass2Result: pass2 ?? undefined,
               }),
@@ -259,7 +227,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
                 fileUri,
                 mimeType,
                 segment,
-                model: MODELS[0].id,
+                model: MODELS.flash,
                 resolution,
                 pass1Result: pass1 ?? undefined,
                 pass2Result: pass2 ?? undefined,
@@ -279,18 +247,18 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       onProgress?.({ phase: 'pass3d', segment: i, totalSegments: n, status: 'done' });
     }
 
-    results.push({ index: segment.index, pass1, pass2, pass3a, pass3c, pass3d });
+    results.push({ index: segment.index, pass1, pass2, pass3c, pass3d });
   }
 
   // Build passesRun dynamically
   if (pass1RanOnce) passesRun.push('pass1');
   if (pass2RanOnce) passesRun.push('pass2');
-  if (pass3aRanOnce) passesRun.push('pass3a');
   if (pass3cRanOnce) passesRun.push('pass3c');
   if (pass3dRanOnce) passesRun.push('pass3d');
 
   // If shutting down, skip post-segment passes and return partial results
   if (wasInterrupted) {
+    if (strategy.passes.includes('code')) interruptedPasses.push('pass3a');
     if (strategy.passes.includes('people')) interruptedPasses.push('pass3b');
     if (strategy.passes.includes('synthesis')) interruptedPasses.push('synthesis');
     return {
@@ -301,15 +269,20 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       strategy,
       synthesisResult: undefined,
       peopleExtraction: null,
+      codeReconstruction: null,
+      uncertainCodeFiles: undefined,
       interrupted: interruptedPasses,
     };
   }
+
+  // Compile segment results for whole-video passes
+  const pass1Results = results.map(r => r.pass1);
+  const pass2Results = results.map(r => r.pass2);
 
   // Pass 3b: People extraction (once, whole video)
   let peopleExtraction: PeopleExtraction | null = null;
   if (strategy.passes.includes('people')) {
     onProgress?.({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running' });
-    const pass1Results = results.map(r => r.pass1);
     const pass3bAttempt = await withRetry(
       () =>
         rateLimiter.execute(
@@ -318,7 +291,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               client,
               fileUri,
               mimeType,
-              model: MODELS[0].id,
+              model: MODELS.flash,
               pass1Results,
             }),
           { onWait },
@@ -335,6 +308,64 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     if (peopleExtraction !== null) passesRun.push('pass3b');
   }
 
+  // Pass 3a: Code reconstruction via consensus (3 runs + validation)
+  let codeReconstruction: CodeReconstruction | null = null;
+  let uncertainCodeFiles: string[] | undefined;
+  if (strategy.passes.includes('code')) {
+    const consensusConfig = { runs: 3, minAgreement: 2 };
+
+    const consensusResult = await runCodeConsensus({
+      config: consensusConfig,
+      runFn: () =>
+        rateLimiter.execute(
+          () =>
+            runCodeReconstruction({
+              client,
+              fileUri,
+              mimeType,
+              duration,
+              model: MODELS.pro,
+              resolution,
+              pass1Results,
+              pass2Results,
+            }),
+          { onWait },
+        ),
+      pass2Results,
+      onProgress: (run, total) => {
+        onProgress?.({ phase: 'pass3a', segment: run - 1, totalSegments: total, status: 'running' });
+      },
+    });
+
+    onProgress?.({ phase: 'pass3a', segment: consensusConfig.runs - 1, totalSegments: consensusConfig.runs, status: 'done' });
+
+    if (consensusResult.runsCompleted === 0) {
+      const errMsg = 'pass3a: all consensus runs failed';
+      log.warn(errMsg);
+      errors.push(errMsg);
+    } else {
+      const validationResult = validateCodeReconstruction({
+        consensusResult,
+        pass2Results,
+      });
+
+      const allFiles = [...validationResult.confirmed, ...validationResult.uncertain];
+
+      if (allFiles.length > 0) {
+        codeReconstruction = {
+          files: allFiles,
+          dependencies_mentioned: consensusResult.mergedDependencies,
+          build_commands: consensusResult.mergedBuildCommands,
+        };
+        uncertainCodeFiles = validationResult.uncertain.map(f => f.filename);
+      }
+
+      log.info(`Code: ${validationResult.confirmed.length} confirmed, ${validationResult.uncertain.length} uncertain, ${validationResult.rejected.length} rejected`);
+    }
+
+    if (codeReconstruction !== null) passesRun.push('pass3a');
+  }
+
   // Synthesis (last)
   let synthesisResult: SynthesisResult | undefined;
   if (strategy.passes.includes('synthesis')) {
@@ -345,10 +376,11 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
           () =>
             runSynthesis({
               client,
-              model: MODELS[1].id,
+              model: MODELS.pro,
               segmentResults: results,
               videoProfile,
               peopleExtraction,
+              codeReconstruction,
               context: config.context,
             }),
           { onWait },
@@ -373,6 +405,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     strategy,
     synthesisResult,
     peopleExtraction,
+    codeReconstruction,
+    uncertainCodeFiles,
     interrupted: undefined,
   };
 }

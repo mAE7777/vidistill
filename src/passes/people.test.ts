@@ -203,7 +203,7 @@ describe('runPeopleExtraction', () => {
     expect(call.model).toBe('gemini-3-flash-preview');
     expect(call.config.responseMimeType).toBe('application/json');
     expect(call.config.maxOutputTokens).toBe(65536);
-    expect(call.config.temperature).toBe(1.0);
+    expect(call.config.temperature).toBe(0.0);
   });
 
   it('propagates errors thrown by client.generate', async () => {

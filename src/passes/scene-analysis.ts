@@ -46,7 +46,7 @@ export async function runSceneAnalysis(params: RunSceneAnalysisParams): Promise<
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : { mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW }),
       maxOutputTokens: 8192,
-      temperature: 0.5,
+      temperature: 0.2,
     },
   });
 

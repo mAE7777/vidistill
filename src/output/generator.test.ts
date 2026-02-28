@@ -34,6 +34,9 @@ vi.mock('./metadata.js', () => ({
 }));
 
 import { mkdir, writeFile } from 'fs/promises';
+import { writeCodeFiles } from './code-writer.js';
+
+const mockWriteCodeFiles = vi.mocked(writeCodeFiles);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,7 +68,6 @@ function makeFullPipelineResult(): PipelineResult {
           visual_notes: [],
           screen_timeline: [],
         },
-        pass3a: { files: [], dependencies_mentioned: [], build_commands: [] },
         pass3c: { messages: [], links: [] },
         pass3d: {
           emotional_shifts: [],
@@ -78,6 +80,7 @@ function makeFullPipelineResult(): PipelineResult {
     ],
     passesRun: ['pass1', 'pass2', 'pass3a', 'pass3c', 'pass3d', 'synthesis'],
     errors: [],
+    codeReconstruction: { files: [], dependencies_mentioned: [], build_commands: [] },
     synthesisResult: {
       overview: 'Overview',
       key_decisions: [],
@@ -198,25 +201,29 @@ describe('generateOutput', () => {
     expect(writtenPaths.some((p) => p.endsWith('guide.md'))).toBe(true);
   });
 
-  it('generates only synthesis-listed files plus always-generated ones', async () => {
+  it('routes files deterministically from pass data, ignoring files_to_generate', async () => {
     const pipelineResult = makeFullPipelineResult();
-    // synthesis says: guide.md, transcript.md, code/, combined.md
+    // files_to_generate says only: guide.md, transcript.md, code/, combined.md
+    // but pass data has pass2, pass3a, pass3c, pass3d, synthesisResult, peopleExtraction
+    // so deterministic routing must produce ALL optional files regardless
     const params = makeParams({ pipelineResult });
     const result = await generateOutput(params);
 
-    // Should have combined.md and code files
+    // pass2 present → combined.md
     expect(result.filesGenerated).toContain('combined.md');
+    // pass3a present → code/
     expect(result.filesGenerated).toContain('code/index.ts');
     expect(result.filesGenerated).toContain('code/code-timeline.md');
-
-    // Should NOT have notes, people, chat, links, action-items, insights
-    // (not in files_to_generate)
-    expect(result.filesGenerated).not.toContain('notes.md');
-    expect(result.filesGenerated).not.toContain('people.md');
-    expect(result.filesGenerated).not.toContain('chat.md');
-    expect(result.filesGenerated).not.toContain('links.md');
-    expect(result.filesGenerated).not.toContain('action-items.md');
-    expect(result.filesGenerated).not.toContain('insights.md');
+    // pass3c present → chat.md, links.md
+    expect(result.filesGenerated).toContain('chat.md');
+    expect(result.filesGenerated).toContain('links.md');
+    // pass3d present → action-items.md, insights.md
+    expect(result.filesGenerated).toContain('action-items.md');
+    expect(result.filesGenerated).toContain('insights.md');
+    // synthesisResult present → notes.md
+    expect(result.filesGenerated).toContain('notes.md');
+    // peopleExtraction present → people.md
+    expect(result.filesGenerated).toContain('people.md');
   });
 
   it('overwrites files if output directory already exists (mkdir recursive does not throw)', async () => {
@@ -294,5 +301,32 @@ describe('generateOutput', () => {
     expect(result.filesGenerated).toContain('chat.md');
     // insights.md (has pass3d)
     expect(result.filesGenerated).toContain('insights.md');
+  });
+
+  it('passes uncertainCodeFiles to writeCodeFiles as a Set', async () => {
+    const pipelineResult: PipelineResult = {
+      ...makeFullPipelineResult(),
+      uncertainCodeFiles: ['utils.py', 'config.ts'],
+    };
+
+    const params = makeParams({ pipelineResult });
+    await generateOutput(params);
+
+    const callArgs = mockWriteCodeFiles.mock.calls[0][0];
+    expect(callArgs.uncertainFiles).toBeInstanceOf(Set);
+    expect(callArgs.uncertainFiles!.has('utils.py')).toBe(true);
+    expect(callArgs.uncertainFiles!.has('config.ts')).toBe(true);
+    expect(callArgs.uncertainFiles!.size).toBe(2);
+  });
+
+  it('passes empty Set when uncertainCodeFiles is undefined', async () => {
+    const pipelineResult = makeFullPipelineResult();
+
+    const params = makeParams({ pipelineResult });
+    await generateOutput(params);
+
+    const callArgs = mockWriteCodeFiles.mock.calls[0][0];
+    expect(callArgs.uncertainFiles).toBeInstanceOf(Set);
+    expect(callArgs.uncertainFiles!.size).toBe(0);
   });
 });

@@ -54,10 +54,28 @@ describe('createProgressDisplay', () => {
     expect(mockSpinner.message).toHaveBeenCalledWith('Analyzing video...');
   });
 
-  it('update() shows pass3a message with segment count', () => {
+  it('update() shows pass3a consensus run message when totalSegments > 1', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3a', segment: 2, totalSegments: 5, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Code reconstruction (3/5 segments)');
+    display.update({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'running' });
+    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 1/3)...');
+  });
+
+  it('update() shows pass3a run 2/3 message', () => {
+    const display = createProgressDisplay();
+    display.update({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'running' });
+    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 2/3)...');
+  });
+
+  it('update() shows pass3a run 3/3 message', () => {
+    const display = createProgressDisplay();
+    display.update({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'running' });
+    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 3/3)...');
+  });
+
+  it('update() shows simple pass3a message when totalSegments is 1', () => {
+    const display = createProgressDisplay();
+    display.update({ phase: 'pass3a', segment: 0, totalSegments: 1, status: 'running' });
+    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code...');
   });
 
   it('update() shows pass3b message without segment count', () => {

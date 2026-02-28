@@ -15,6 +15,8 @@ vi.mock('../passes/implicit.js', () => ({ runImplicitSignals: vi.fn() }));
 vi.mock('../passes/synthesis.js', () => ({ runSynthesis: vi.fn() }));
 vi.mock('./strategy.js', () => ({ determineStrategy: vi.fn() }));
 vi.mock('./segmenter.js', () => ({ createSegmentPlan: vi.fn() }));
+vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn() }));
+vi.mock('./validator.js', () => ({ validateCodeReconstruction: vi.fn() }));
 
 import { runTranscript } from '../passes/transcript.js';
 import { runVisual } from '../passes/visual.js';
@@ -26,6 +28,10 @@ import { runImplicitSignals } from '../passes/implicit.js';
 import { runSynthesis } from '../passes/synthesis.js';
 import { determineStrategy } from './strategy.js';
 import { createSegmentPlan } from './segmenter.js';
+import { runCodeConsensus } from './consensus.js';
+import type { ConsensusResult } from './consensus.js';
+import { validateCodeReconstruction } from './validator.js';
+import type { ValidationResult } from './validator.js';
 
 const mockRunTranscript = vi.mocked(runTranscript);
 const mockRunVisual = vi.mocked(runVisual);
@@ -37,6 +43,8 @@ const mockRunImplicitSignals = vi.mocked(runImplicitSignals);
 const mockRunSynthesis = vi.mocked(runSynthesis);
 const mockDetermineStrategy = vi.mocked(determineStrategy);
 const mockCreateSegmentPlan = vi.mocked(createSegmentPlan);
+const mockRunCodeConsensus = vi.mocked(runCodeConsensus);
+const mockValidateCodeReconstruction = vi.mocked(validateCodeReconstruction);
 
 const MOCK_PROFILE: VideoProfile = {
   type: 'coding',
@@ -124,6 +132,28 @@ function makeSynthesisResult(): SynthesisResult {
   };
 }
 
+function makeConsensusResult(overrides?: Partial<ConsensusResult>): ConsensusResult {
+  return {
+    confirmed: [],
+    rejected: [],
+    runsCompleted: 3,
+    runsAttempted: 3,
+    mergedDependencies: [],
+    mergedBuildCommands: [],
+    ...overrides,
+  };
+}
+
+function makeValidationResult(overrides?: Partial<ValidationResult>): ValidationResult {
+  return {
+    confirmed: [],
+    uncertain: [],
+    rejected: [],
+    warnings: [],
+    ...overrides,
+  };
+}
+
 function makeClient(): GeminiClient {
   return { generate: vi.fn() } as unknown as GeminiClient;
 }
@@ -162,8 +192,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -183,8 +214,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -199,8 +231,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const codingStrategy: PassStrategy = {
@@ -232,11 +265,12 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
       mockRunChatExtraction.mockResolvedValueOnce(makeChatExtraction());
       mockRunImplicitSignals.mockResolvedValueOnce(makeImplicitSignals());
     }
     mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -263,8 +297,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const progressCalls: ProgressStatus[] = [];
@@ -363,8 +398,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -439,26 +475,265 @@ describe('runPipeline', () => {
 
   // --- Specialist pass dispatch tests ---
 
-  it('runs code reconstruction per segment when strategy includes "code"', async () => {
+  it('runs code consensus once (whole video) when strategy includes "code"', async () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
     await vi.runAllTimersAsync();
     const result = await promise;
 
-    expect(mockRunCodeReconstruction).toHaveBeenCalledTimes(3);
-    expect(result.passesRun).toContain('pass3a');
+    // Consensus runs exactly once (not per segment)
+    expect(mockRunCodeConsensus).toHaveBeenCalledTimes(1);
+    // pass3a is not in passesRun when codeReconstruction is null (empty confirmed+uncertain)
+    expect(result.passesRun).not.toContain('pass3a');
+    expect(result.codeReconstruction).toBeNull();
+  });
+
+  it('consensus called with { runs: 3, minAgreement: 2 } when strategy includes "code"', async () => {
     for (let i = 0; i < 3; i++) {
-      expect(result.segments[i].pass3a).toEqual(makeCodeReconstruction());
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockRunCodeConsensus).toHaveBeenCalledTimes(1);
+    const consensusArgs = mockRunCodeConsensus.mock.calls[0][0];
+    expect(consensusArgs.config).toEqual({ runs: 3, minAgreement: 2 });
+  });
+
+  it('consensus receives pass2Results from all segments', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const consensusArgs = mockRunCodeConsensus.mock.calls[0][0];
+    expect(Array.isArray(consensusArgs.pass2Results)).toBe(true);
+    expect((consensusArgs.pass2Results as unknown[]).length).toBe(3);
+  });
+
+  it('validation called after consensus with consensusResult and pass2Results', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    const consensusResult = makeConsensusResult({ runsCompleted: 3 });
+    mockRunCodeConsensus.mockResolvedValue(consensusResult);
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockValidateCodeReconstruction).toHaveBeenCalledTimes(1);
+    const validationArgs = mockValidateCodeReconstruction.mock.calls[0][0];
+    expect(validationArgs.consensusResult).toBe(consensusResult);
+    expect(Array.isArray(validationArgs.pass2Results)).toBe(true);
+    expect((validationArgs.pass2Results as unknown[]).length).toBe(3);
+  });
+
+  it('pipeline result includes both confirmed and uncertain files in codeReconstruction', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const confirmedFile = {
+      filename: 'src/main.ts',
+      language: 'typescript',
+      final_content: 'const x = 1;',
+      changes: [{ timestamp: '0:00', change_type: 'add', description: 'init', diff_summary: '+1' }],
+    };
+    const uncertainFile = {
+      filename: 'src/utils.ts',
+      language: 'typescript',
+      final_content: 'export function foo() {}',
+      changes: [{ timestamp: '0:01', change_type: 'add', description: 'utils', diff_summary: '+1' }],
+    };
+
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 3 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({
+      confirmed: [confirmedFile],
+      uncertain: [uncertainFile],
+    }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.codeReconstruction).not.toBeNull();
+    expect(result.codeReconstruction?.files).toHaveLength(2);
+    expect(result.codeReconstruction?.files).toContainEqual(confirmedFile);
+    expect(result.codeReconstruction?.files).toContainEqual(uncertainFile);
+    expect(result.passesRun).toContain('pass3a');
+  });
+
+  it('uncertain files included when 0 confirmed but >= 1 uncertain', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const uncertainFile = {
+      filename: 'src/utils.ts',
+      language: 'typescript',
+      final_content: 'export function foo() {}',
+      changes: [{ timestamp: '0:01', change_type: 'add', description: 'utils', diff_summary: '+1' }],
+    };
+
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 2 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({
+      confirmed: [],
+      uncertain: [uncertainFile],
+    }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.codeReconstruction).not.toBeNull();
+    expect(result.codeReconstruction?.files).toHaveLength(1);
+    expect(result.codeReconstruction?.files[0]).toEqual(uncertainFile);
+    expect(result.passesRun).toContain('pass3a');
+  });
+
+  it('uncertainCodeFiles populated with uncertain file names', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const uncertainFile = {
+      filename: 'src/utils.ts',
+      language: 'typescript',
+      final_content: 'export function foo() {}',
+      changes: [{ timestamp: '0:01', change_type: 'add', description: 'utils', diff_summary: '+1' }],
+    };
+
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 3 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({
+      confirmed: [],
+      uncertain: [uncertainFile],
+    }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.uncertainCodeFiles).toEqual(['src/utils.ts']);
+  });
+
+  it('all consensus runs fail: codeReconstruction is null, error logged', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 0, runsAttempted: 3 }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    // Pipeline still completes
+    expect(result.segments).toHaveLength(3);
+
+    // Error recorded
+    expect(result.errors.some(e => e.includes('pass3a'))).toBe(true);
+
+    // Synthesis still ran
+    expect(mockRunSynthesis).toHaveBeenCalledTimes(1);
+
+    // codeReconstruction is null on failure
+    expect(result.codeReconstruction).toBeNull();
+
+    // Validation should not be called when all runs fail
+    expect(mockValidateCodeReconstruction).not.toHaveBeenCalled();
+  });
+
+  it('code reconstruction result is on PipelineResult, not on SegmentResult', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const confirmedFile = {
+      filename: 'app.ts',
+      language: 'typescript',
+      final_content: 'const app = true;',
+      changes: [{ timestamp: '0:00', change_type: 'add', description: 'app', diff_summary: '+1' }],
+    };
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 3 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({ confirmed: [confirmedFile] }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    // Result lives on PipelineResult
+    expect(result.codeReconstruction).not.toBeNull();
+    expect(result.codeReconstruction?.files).toContainEqual(confirmedFile);
+
+    // No pass3a on any SegmentResult
+    for (const seg of result.segments) {
+      expect(seg).not.toHaveProperty('pass3a');
     }
   });
 
-  it('does not run code reconstruction when strategy does not include "code"', async () => {
+  it('code reconstruction runs after people extraction and before synthesis', async () => {
+    const fullStrategy: PassStrategy = {
+      passes: ['transcript', 'visual', 'people', 'code', 'synthesis'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(fullStrategy);
+
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const peopleOrder = mockRunPeopleExtraction.mock.invocationCallOrder[0];
+    const consensusOrder = mockRunCodeConsensus.mock.invocationCallOrder[0];
+    const synthOrder = mockRunSynthesis.mock.invocationCallOrder[0];
+
+    expect(peopleOrder).toBeLessThan(consensusOrder);
+    expect(consensusOrder).toBeLessThan(synthOrder);
+  });
+
+  it('does not run code consensus when strategy does not include "code"', async () => {
     const noCodeStrategy: PassStrategy = {
       passes: ['transcript', 'visual'],
       resolution: 'medium',
@@ -475,7 +750,7 @@ describe('runPipeline', () => {
     await vi.runAllTimersAsync();
     const result = await promise;
 
-    expect(mockRunCodeReconstruction).not.toHaveBeenCalled();
+    expect(mockRunCodeConsensus).not.toHaveBeenCalled();
     expect(result.passesRun).not.toContain('pass3a');
   });
 
@@ -537,8 +812,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -549,18 +825,19 @@ describe('runPipeline', () => {
     expect(result.passesRun).toContain('synthesis');
     expect(result.synthesisResult).toEqual(makeSynthesisResult());
 
-    // Synthesis must run after the last code reconstruction
-    const lastCodeOrder = mockRunCodeReconstruction.mock.invocationCallOrder[2];
+    // Synthesis must run after consensus
+    const consensusOrder = mockRunCodeConsensus.mock.invocationCallOrder[0];
     const synthOrder = mockRunSynthesis.mock.invocationCallOrder[0];
-    expect(lastCodeOrder).toBeLessThan(synthOrder);
+    expect(consensusOrder).toBeLessThan(synthOrder);
   });
 
   it('synthesisResult includes files_to_generate', async () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -581,11 +858,19 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
       mockRunChatExtraction.mockResolvedValueOnce(makeChatExtraction());
       mockRunImplicitSignals.mockResolvedValueOnce(makeImplicitSignals());
     }
     mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());
+
+    const confirmedFile = {
+      filename: 'app.ts',
+      language: 'typescript',
+      final_content: 'const x = 1;',
+      changes: [{ timestamp: '0:00', change_type: 'add', description: 'init', diff_summary: '+1' }],
+    };
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 3 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({ confirmed: [confirmedFile] }));
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -602,14 +887,12 @@ describe('runPipeline', () => {
   });
 
   it('specialist pass failure is captured in errors and pipeline continues', async () => {
-    const codeError = new Error('code pass failed');
-
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      // code reconstruction fails for all attempts on every segment
-      mockRunCodeReconstruction.mockRejectedValue(codeError);
     }
+    // All consensus runs fail
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 0, runsAttempted: 3 }));
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -619,16 +902,14 @@ describe('runPipeline', () => {
     // Pipeline still completes
     expect(result.segments).toHaveLength(3);
 
-    // Errors recorded for each failing code pass (4 attempts × 3 segments = many rejections, but 3 error entries)
+    // Error recorded for the failing code pass
     expect(result.errors.some(e => e.includes('pass3a'))).toBe(true);
 
     // Synthesis still ran
     expect(mockRunSynthesis).toHaveBeenCalledTimes(1);
 
-    // pass3a in segments is null on failure
-    for (let i = 0; i < 3; i++) {
-      expect(result.segments[i].pass3a).toBeNull();
-    }
+    // codeReconstruction is null on failure
+    expect(result.codeReconstruction).toBeNull();
   });
 
   it('people extraction failure is captured in errors, pipeline continues, synthesis still runs', async () => {
@@ -656,15 +937,23 @@ describe('runPipeline', () => {
     expect(result.peopleExtraction).toBeNull();
   });
 
-  it('progress events emitted for pass3a per segment', async () => {
+  it('progress events for pass3a show run 1/3, 2/3, 3/3 via segment/totalSegments', async () => {
     const progressCalls: ProgressStatus[] = [];
     const onProgress = (s: ProgressStatus) => { progressCalls.push(s); };
 
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+
+    // Simulate consensus calling onProgress for each run
+    mockRunCodeConsensus.mockImplementation(async (params) => {
+      params.onProgress?.(1, 3);
+      params.onProgress?.(2, 3);
+      params.onProgress?.(3, 3);
+      return makeConsensusResult();
+    });
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig({ onProgress }));
@@ -672,9 +961,12 @@ describe('runPipeline', () => {
     await promise;
 
     const pass3aEvents = progressCalls.filter(p => p.phase === 'pass3a');
-    expect(pass3aEvents).toHaveLength(6); // 3 segments × 2 events (running + done)
+    // 3 running events (one per consensus run) + 1 done event
+    expect(pass3aEvents).toHaveLength(4);
     expect(pass3aEvents[0]).toEqual({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'running' });
-    expect(pass3aEvents[1]).toEqual({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'done' });
+    expect(pass3aEvents[1]).toEqual({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'running' });
+    expect(pass3aEvents[2]).toEqual({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'running' });
+    expect(pass3aEvents[3]).toEqual({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'done' });
   });
 
   it('progress events emitted for pass3b once', async () => {
@@ -704,12 +996,13 @@ describe('runPipeline', () => {
     expect(pass3bEvents[1]).toEqual({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done' });
   });
 
-  it('synthesis uses MODELS[1].id and does not pass fileUri/mimeType', async () => {
+  it('synthesis uses MODELS.pro and does not pass fileUri/mimeType', async () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
@@ -717,7 +1010,7 @@ describe('runPipeline', () => {
     await promise;
 
     const synthArgs = mockRunSynthesis.mock.calls[0][0];
-    expect(synthArgs.model).toBe('gemini-2.5-flash');
+    expect(synthArgs.model).toBe('gemini-2.5-pro');
     expect(synthArgs).not.toHaveProperty('fileUri');
     expect(synthArgs).not.toHaveProperty('mimeType');
   });
@@ -726,8 +1019,9 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockRejectedValue(new Error('synthesis failed'));
 
     const promise = runPipeline(baseConfig());
@@ -739,19 +1033,126 @@ describe('runPipeline', () => {
     expect(result.passesRun).not.toContain('synthesis');
   });
 
-  it('code reconstruction uses MODELS[0].id', async () => {
+  it('consensus runFn uses MODELS.pro for code reconstruction', async () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunCodeReconstruction.mockResolvedValueOnce(makeCodeReconstruction());
     }
+
+    // Capture and invoke runFn to verify it calls runCodeReconstruction with MODELS.pro
+    mockRunCodeConsensus.mockImplementation(async (params) => {
+      // Call the runFn to verify it passes correct args
+      await params.runFn();
+      return makeConsensusResult();
+    });
+    mockRunCodeReconstruction.mockResolvedValue(makeCodeReconstruction());
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
     mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
 
     const promise = runPipeline(baseConfig());
     await vi.runAllTimersAsync();
     await promise;
 
-    const codeArgs = mockRunCodeReconstruction.mock.calls[0][0];
-    expect(codeArgs.model).toBe('gemini-3-flash-preview');
+    expect(mockRunCodeReconstruction).toHaveBeenCalledTimes(1);
+    const codeArgs = mockRunCodeReconstruction.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(codeArgs['model']).toBe('gemini-2.5-pro');
+  });
+
+  it('interrupted pipeline lists pass3a in interruptedPasses when code strategy is active', async () => {
+    let callCount = 0;
+    mockRunTranscript.mockImplementation(async () => {
+      callCount++;
+      if (callCount >= 2) {
+        // Simulate shutdown after first segment
+        return makePass1(0);
+      }
+      return makePass1(0);
+    });
+    mockRunVisual.mockResolvedValue(makePass2(0));
+
+    let shutdownTriggered = false;
+    const isShuttingDown = () => {
+      // Trigger shutdown after first segment completes
+      if (callCount >= 1) {
+        shutdownTriggered = true;
+        return true;
+      }
+      return false;
+    };
+
+    // Reset and use a simpler approach
+    vi.clearAllMocks();
+    mockRunSceneAnalysis.mockResolvedValue(MOCK_PROFILE);
+    mockDetermineStrategy.mockReturnValue(MOCK_STRATEGY);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: SEGMENTS,
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+
+    let segmentsDone = 0;
+    mockRunTranscript.mockImplementation(async () => {
+      segmentsDone++;
+      return makePass1(segmentsDone - 1);
+    });
+    mockRunVisual.mockImplementation(async () => makePass2(0));
+
+    const isShuttingDownFn = () => segmentsDone >= 1;
+
+    const promise = runPipeline(baseConfig({ isShuttingDown: isShuttingDownFn }));
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.interrupted).toBeDefined();
+    expect(result.interrupted).toContain('pass3a');
+  });
+
+  it('summary log line Code: X confirmed, Y uncertain, Z rejected', async () => {
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const confirmedFile = {
+      filename: 'src/main.ts',
+      language: 'typescript',
+      final_content: 'const x = 1;',
+      changes: [{ timestamp: '0:00', change_type: 'add', description: 'init', diff_summary: '+1' }],
+    };
+    const uncertainFile = {
+      filename: 'src/utils.ts',
+      language: 'typescript',
+      final_content: 'export function foo() {}',
+      changes: [{ timestamp: '0:01', change_type: 'add', description: 'utils', diff_summary: '+1' }],
+    };
+    const rejectedFile = {
+      filename: '../bad.ts',
+      language: 'typescript',
+      final_content: 'malicious',
+      changes: [{ timestamp: '0:02', change_type: 'add', description: 'bad', diff_summary: '+1' }],
+    };
+
+    mockRunCodeConsensus.mockResolvedValue(makeConsensusResult({ runsCompleted: 3 }));
+    mockValidateCodeReconstruction.mockReturnValue(makeValidationResult({
+      confirmed: [confirmedFile],
+      uncertain: [uncertainFile],
+      rejected: [rejectedFile],
+    }));
+    mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+    // Spy on log.info
+    const { log } = await import('@clack/prompts');
+    const logInfoSpy = vi.spyOn(log, 'info');
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const summaryCall = logInfoSpy.mock.calls.find(call =>
+      typeof call[0] === 'string' && call[0].startsWith('Code:')
+    );
+    expect(summaryCall).toBeDefined();
+    expect(summaryCall?.[0]).toBe('Code: 1 confirmed, 1 uncertain, 1 rejected');
+
+    logInfoSpy.mockRestore();
   });
 });

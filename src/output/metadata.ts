@@ -50,7 +50,7 @@ export function writeMetadata(params: WriteMetadataParams): string {
 
 export function writeRawOutput(pipelineResult: PipelineResult): Map<string, string> {
   const files = new Map<string, string>();
-  const { segments, videoProfile, peopleExtraction, synthesisResult } = pipelineResult;
+  const { segments, videoProfile, peopleExtraction, synthesisResult, codeReconstruction } = pipelineResult;
 
   if (videoProfile != null) {
     files.set('pass0-scene.json', JSON.stringify(videoProfile, null, 2));
@@ -67,10 +67,6 @@ export function writeRawOutput(pipelineResult: PipelineResult): Map<string, stri
       files.set(`pass2-seg${n}.json`, JSON.stringify(seg.pass2, null, 2));
     }
 
-    if (seg.pass3a != null) {
-      files.set(`pass3a-seg${n}.json`, JSON.stringify(seg.pass3a, null, 2));
-    }
-
     if (seg.pass3c != null) {
       files.set(`pass3c-seg${n}.json`, JSON.stringify(seg.pass3c, null, 2));
     }
@@ -78,6 +74,10 @@ export function writeRawOutput(pipelineResult: PipelineResult): Map<string, stri
     if (seg.pass3d != null) {
       files.set(`pass3d-seg${n}.json`, JSON.stringify(seg.pass3d, null, 2));
     }
+  }
+
+  if (codeReconstruction != null) {
+    files.set('pass3a.json', JSON.stringify(codeReconstruction, null, 2));
   }
 
   if (peopleExtraction != null) {

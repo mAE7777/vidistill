@@ -27,49 +27,34 @@ export function slugify(title: string): string {
 }
 
 /**
- * Determine which optional files to generate based on synthesis or available pass data.
+ * Determine which optional files to generate based solely on pass data presence.
+ * synthesisResult.files_to_generate is never consulted for routing decisions.
  */
 function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   const { pipelineResult } = params;
   const { synthesisResult, segments, peopleExtraction } = pipelineResult;
 
   // Always-generated files (handled separately): guide.md, transcript.md, metadata.json, raw/
-  // This set tracks the optional files requested
+  // This set tracks the optional files to generate
   const optional = new Set<string>();
 
-  if (synthesisResult != null) {
-    // Known output file names that map directly to writers
-    const knownOutputFiles = new Set([
-      'transcript.md', 'combined.md', 'notes.md', 'people.md',
-      'chat.md', 'links.md', 'action-items.md', 'insights.md', 'code/',
-    ]);
-    for (const f of synthesisResult.files_to_generate) {
-      if (knownOutputFiles.has(f)) {
-        optional.add(f);
-      } else {
-        // Unrecognized filenames are code files — trigger the code writer
-        optional.add('code/');
-      }
-    }
-  } else {
-    // Fallback: generate everything for which pass data exists
-    const hasPass2 = segments.some((s) => s.pass2 != null);
-    const hasPass3a = segments.some((s) => s.pass3a != null);
-    const hasPass3c = segments.some((s) => s.pass3c != null);
-    const hasPass3d = segments.some((s) => s.pass3d != null);
+  const hasPass2 = segments.some((s) => s.pass2 != null);
+  const hasPass3a = pipelineResult.codeReconstruction != null;
+  const hasPass3c = segments.some((s) => s.pass3c != null);
+  const hasPass3d = segments.some((s) => s.pass3d != null);
 
-    if (hasPass2) optional.add('combined.md');
-    if (hasPass3a) optional.add('code/');
-    if (hasPass3c) {
-      optional.add('chat.md');
-      optional.add('links.md');
-    }
-    if (hasPass3d) {
-      optional.add('action-items.md');
-      optional.add('insights.md');
-    }
-    if (peopleExtraction != null) optional.add('people.md');
+  if (hasPass2) optional.add('combined.md');
+  if (hasPass3a) optional.add('code/');
+  if (hasPass3c) {
+    optional.add('chat.md');
+    optional.add('links.md');
   }
+  if (hasPass3d) {
+    optional.add('action-items.md');
+    optional.add('insights.md');
+  }
+  if (synthesisResult != null) optional.add('notes.md');
+  if (peopleExtraction != null) optional.add('people.md');
 
   return optional;
 }
@@ -120,7 +105,8 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2c: code/ directory — conditional
   if (filesToGenerate.has('code/')) {
     try {
-      const { files, timeline } = writeCodeFiles({ pipelineResult });
+      const uncertainSet = new Set(pipelineResult.uncertainCodeFiles ?? []);
+      const { files, timeline } = writeCodeFiles({ pipelineResult, uncertainFiles: uncertainSet });
       // Write individual code files
       for (const [filename, content] of files) {
         try {

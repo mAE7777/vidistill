@@ -3,6 +3,7 @@ import type { PipelineResult, CodeFile, CodeChange } from '../types/index.js';
 
 export interface WriteCodeFilesParams {
   pipelineResult: PipelineResult;
+  uncertainFiles?: Set<string>;
 }
 
 export interface WriteCodeFilesResult {
@@ -18,9 +19,9 @@ function renderChangeRow(change: CodeChange): string {
   return `| \`${change.timestamp}\` | ${badge} | ${desc}${diffPart} |`;
 }
 
-function buildTimeline(allFiles: Array<{ file: CodeFile; segmentIndex: number }>): string {
+function buildTimeline(allFiles: CodeFile[]): string {
   if (allFiles.length === 0) {
-    return '# Code Timeline\n\n_No code files reconstructed._';
+    return '# Code Timeline\n\nNo code files could be reliably reconstructed.';
   }
 
   const lines: string[] = ['# Code Timeline', ''];
@@ -30,13 +31,12 @@ function buildTimeline(allFiles: Array<{ file: CodeFile; segmentIndex: number }>
     timestamp: string;
     file: CodeFile;
     change: CodeChange;
-    segmentIndex: number;
   }
 
   const annotated: AnnotatedChange[] = [];
-  for (const { file, segmentIndex } of allFiles) {
+  for (const file of allFiles) {
     for (const change of file.changes) {
-      annotated.push({ timestamp: change.timestamp, file, change, segmentIndex });
+      annotated.push({ timestamp: change.timestamp, file, change });
     }
   }
 
@@ -59,7 +59,7 @@ function buildTimeline(allFiles: Array<{ file: CodeFile; segmentIndex: number }>
 
   // Per-file sections
   const seenFiles = new Set<string>();
-  for (const { file } of allFiles) {
+  for (const file of allFiles) {
     if (seenFiles.has(file.filename)) continue;
     seenFiles.add(file.filename);
 
@@ -83,27 +83,21 @@ function buildTimeline(allFiles: Array<{ file: CodeFile; segmentIndex: number }>
 }
 
 export function writeCodeFiles(params: WriteCodeFilesParams): WriteCodeFilesResult {
-  const { pipelineResult } = params;
-  const { segments } = pipelineResult;
+  const { pipelineResult, uncertainFiles } = params;
+  const { codeReconstruction } = pipelineResult;
 
-  // Collect all CodeFile instances across segments (pass3a)
-  const allFiles: Array<{ file: CodeFile; segmentIndex: number }> = [];
-
-  // Track the latest version of each filename (last segment wins for final content)
-  const latestByFilename = new Map<string, { file: CodeFile; segmentIndex: number }>();
-
-  for (const seg of segments) {
-    if (seg.pass3a == null) continue;
-    for (const file of seg.pass3a.files) {
-      allFiles.push({ file, segmentIndex: seg.index });
-      latestByFilename.set(file.filename, { file, segmentIndex: seg.index });
-    }
-  }
-
-  // Build individual file contents map
+  const allFiles: CodeFile[] = [];
   const files = new Map<string, string>();
-  for (const [filename, { file }] of latestByFilename) {
-    files.set(filename, file.final_content);
+
+  if (codeReconstruction != null) {
+    for (const file of codeReconstruction.files) {
+      allFiles.push(file);
+      let content = file.final_content;
+      if (uncertainFiles?.has(file.filename)) {
+        content = `// [note: this file passed consensus but could not be cross-referenced against visual observations — content may be approximate]\n${content}`;
+      }
+      files.set(file.filename, content);
+    }
   }
 
   const timeline = buildTimeline(allFiles);

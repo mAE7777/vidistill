@@ -6,6 +6,7 @@ import type {
   VideoProfile,
   PeopleExtraction,
   SynthesisResult,
+  CodeReconstruction,
 } from '../types/index.js';
 
 export interface RunSynthesisParams {
@@ -14,17 +15,17 @@ export interface RunSynthesisParams {
   segmentResults: SegmentResult[];
   videoProfile: VideoProfile;
   peopleExtraction?: PeopleExtraction | null;
+  codeReconstruction?: CodeReconstruction | null;
   context?: string;
 }
 
 function compileContext(params: RunSynthesisParams): string {
-  const { segmentResults, videoProfile, peopleExtraction, context } = params;
+  const { segmentResults, videoProfile, peopleExtraction, codeReconstruction, context } = params;
 
   const segmentSections = segmentResults.map((seg, idx) => {
     const segNum = idx + 1;
     const pass1 = seg.pass1;
     const pass2 = seg.pass2;
-    const pass3a = seg.pass3a;
     const pass3c = seg.pass3c;
     const pass3d = seg.pass3d;
 
@@ -65,16 +66,6 @@ function compileContext(params: RunSynthesisParams): string {
     }
     lines.push('');
 
-    // Code Reconstruction (pass3a)
-    if (pass3a != null) {
-      lines.push('--- Code Reconstruction ---');
-      for (const f of pass3a.files) {
-        lines.push(`File: ${f.filename} (${f.language})`);
-        lines.push(`Final content: ${f.final_content}`);
-      }
-      lines.push('');
-    }
-
     // Chat Messages (pass3c)
     if (pass3c != null) {
       lines.push('--- Chat Messages ---');
@@ -113,6 +104,17 @@ function compileContext(params: RunSynthesisParams): string {
     `Type: ${videoProfile.type} | Complexity: ${videoProfile.complexity} | Speakers: ${videoProfile.speakers.count}`,
   ];
 
+  // Code Reconstruction (whole-video, pipeline-level)
+  const codeLines: string[] = [];
+  if (codeReconstruction != null) {
+    codeLines.push('=== CODE RECONSTRUCTION ===');
+    codeLines.push('--- Code Reconstruction ---');
+    for (const f of codeReconstruction.files) {
+      codeLines.push(`File: ${f.filename} (${f.language})`);
+      codeLines.push(`Final content: ${f.final_content}`);
+    }
+  }
+
   // People
   const peopleLines: string[] = ['=== PEOPLE ==='];
   if (peopleExtraction != null && peopleExtraction.participants.length > 0) {
@@ -127,12 +129,15 @@ function compileContext(params: RunSynthesisParams): string {
   // User context
   const contextLines: string[] = ['=== USER CONTEXT ===', context != null && context.length > 0 ? context : '[No user context provided]'];
 
-  return [
+  const sections = [
     ...segmentSections,
     profileLines.join('\n'),
+    ...(codeLines.length > 0 ? [codeLines.join('\n')] : []),
     peopleLines.join('\n'),
     contextLines.join('\n'),
-  ].join('\n\n');
+  ];
+
+  return sections.join('\n\n');
 }
 
 export async function runSynthesis(params: RunSynthesisParams): Promise<SynthesisResult> {
@@ -155,7 +160,7 @@ export async function runSynthesis(params: RunSynthesisParams): Promise<Synthesi
       responseSchema: SCHEMA_SYNTHESIS,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,
-      temperature: 1.0,
+      temperature: 0.1,
     },
   });
 
