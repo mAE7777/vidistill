@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1] - 2026-02-28
+
+### Fixed
+- Code pass now runs for any video type when code is visible on screen, not just coding/mixed types
+- Guide.md files table shows actually generated files instead of synthesis wishes that may not exist
+- Synthesis code filenames (e.g. `views.py`, `test_assembler.py`) correctly trigger the code writer
+
 ## [0.1.0] - 2026-02-28
 
 Initial release.
