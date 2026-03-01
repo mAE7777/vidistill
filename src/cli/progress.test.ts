@@ -101,6 +101,7 @@ describe('createProgressDisplay', () => {
     display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
     expect(mockSpinner.stop).toHaveBeenCalledWith('');
     expect(progress).toHaveBeenCalledWith({ max: 10 });
+    expect(mockProgressBar.start).toHaveBeenCalledWith('Extracting transcript...');
   });
 
   it('does not create progress bar twice', () => {
@@ -146,21 +147,19 @@ describe('createProgressDisplay', () => {
     expect(mockSpinner.message).not.toHaveBeenCalled();
   });
 
-  it('complete() is a no-op — does not call spinner or log', () => {
+  it('complete() stops spinner when no progress bar was created', () => {
     const display = createProgressDisplay();
     display.complete({ segments: [{ index: 0, pass1: null, pass2: null }], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
-    expect(mockSpinner.stop).not.toHaveBeenCalled();
-    expect(mockSpinner.error).not.toHaveBeenCalled();
-    expect(log.success as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-    expect(log.info as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
-    expect(log.warn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(mockSpinner.stop).toHaveBeenCalledWith('');
   });
 
-  it('complete() is a no-op even when errors exist', () => {
+  it('complete() stops progress bar when it was created', () => {
     const display = createProgressDisplay();
-    display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: ['some error'] }, 5000);
+    // Trigger progress bar creation
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    vi.clearAllMocks();
+    display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
+    expect(mockProgressBar.stop).toHaveBeenCalledWith('');
     expect(mockSpinner.stop).not.toHaveBeenCalled();
-    expect(mockSpinner.error).not.toHaveBeenCalled();
-    expect(log.warn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 });

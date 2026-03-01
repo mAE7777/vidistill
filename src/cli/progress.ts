@@ -40,6 +40,7 @@ export function createProgressDisplay(): ProgressDisplay {
       seenTotalSteps = true;
       s.stop('');
       progressBar = progress({ max: status.totalSteps });
+      progressBar.start(label);
     }
 
     if (progressBar != null) {
@@ -62,8 +63,16 @@ export function createProgressDisplay(): ProgressDisplay {
     // No-op — rate limit pauses are invisible to the user
   }
 
-  function complete(_result: PipelineResult, _elapsedMs: number): void {
-    // No verbose output — distill.ts handles completion display
+  function complete(result: PipelineResult, _elapsedMs: number): void {
+    if (progressBar != null) {
+      if (result.errors.length > 0) {
+        progressBar.stop('');
+      } else {
+        progressBar.stop('');
+      }
+    } else {
+      s.stop('');
+    }
   }
 
   return { update, onWait, complete };

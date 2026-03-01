@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3] - 2026-02-28
+
+### Fixed
+- Progress bar and spinner now properly stop on pipeline completion (was a no-op leaving them hanging)
+- Progress bar `start()` called with initial label for immediate visual feedback
+
 ## [0.2.2] - 2026-02-28
 
 ### Fixed
