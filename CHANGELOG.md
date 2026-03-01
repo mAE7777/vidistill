@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.5] - 2026-03-01
+
+### Fixed
+- Subcommands (extract, ask, search, etc.) now work in published package — replaced dynamic `import()` with static imports so tsup includes them in the bundle
+
 ## [0.2.4] - 2026-03-01
 
 ### Added

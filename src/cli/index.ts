@@ -2,20 +2,32 @@ import { createRequire } from 'node:module';
 import { defineCommand, runMain } from 'citty';
 import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
+import { run as runExtract } from '../commands/extract.js';
+import { run as runAsk } from '../commands/ask.js';
+import { run as runSearch } from '../commands/search.js';
+import { run as runMcp } from '../commands/mcp.js';
+import { run as runWatch } from '../commands/watch.js';
+import { run as runRenameSpeakers } from '../commands/rename-speakers.js';
 
 const _require = createRequire(import.meta.url);
 const { version } = _require('../package.json') as { version: string };
 
 const DEFAULT_OUTPUT = './vidistill-output/';
 
-const SUBCOMMANDS = new Set(['ask', 'search', 'extract', 'mcp', 'watch', 'rename-speakers']);
+const SUBCOMMANDS: Record<string, (args: string[]) => Promise<void>> = {
+  ask: runAsk,
+  search: runSearch,
+  extract: runExtract,
+  mcp: runMcp,
+  watch: runWatch,
+  'rename-speakers': runRenameSpeakers,
+};
 
 const main = defineCommand({
   meta: {
     name: 'vidistill',
     version,
-    description:
-      'Video Intelligence Distiller — turn video into structured notes\n\nCommands: ask, search, extract, mcp, watch, rename-speakers',
+    description: `Video Intelligence Distiller — turn video into structured notes\n\nCommands: ${Object.keys(SUBCOMMANDS).join(', ')}`,
   },
   args: {
     input: {
@@ -46,12 +58,8 @@ const main = defineCommand({
 
     const name = args.input;
 
-    if (name != null && SUBCOMMANDS.has(name)) {
-      const mod = await import(`../commands/${name}.js`);
-      if (typeof mod.run !== 'function') {
-        throw new Error(`Subcommand "${name}" does not export a run function`);
-      }
-      await mod.run(process.argv.slice(3));
+    if (name != null && name in SUBCOMMANDS) {
+      await SUBCOMMANDS[name](process.argv.slice(3));
       return;
     }
 
