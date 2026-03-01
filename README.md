@@ -1,8 +1,8 @@
 # vidistill
 
-Video intelligence distiller — turn any video into structured notes, transcripts, and insights using Gemini.
+Video intelligence distiller — turn any video or audio file into structured notes, transcripts, and insights using Gemini.
 
-Feed it a YouTube URL or local video file. It analyzes the content through multiple AI passes (scene analysis, transcript, visuals, code extraction, people, chat, implicit signals) and synthesizes everything into organized markdown output.
+Feed it a YouTube URL, local video, or audio file. It analyzes the content through multiple AI passes (scene analysis, transcript, visuals, code extraction, people, chat, implicit signals) and synthesizes everything into organized markdown output.
 
 ## Install
 
@@ -20,12 +20,13 @@ vidistill [input] [options]
 
 **Arguments:**
 
-- `input` — YouTube URL or local file path (prompted interactively if omitted)
+- `input` — YouTube URL, local video, or audio file path (prompted interactively if omitted)
 
 **Options:**
 
 - `-c, --context` — context about the video (e.g. "CS lecture", "product demo")
 - `-o, --output` — output directory (default: `./vidistill-output/`)
+- `-l, --lang <code>` — output language (e.g. `zh`, `ja`, `ko`, `es`, `fr`, `de`, `pt`, `ru`, `ar`, `hi`)
 
 **Examples:**
 
@@ -39,9 +40,40 @@ vidistill "https://youtube.com/watch?v=dQw4w9WgXcQ"
 # Local file with context
 vidistill ./lecture.mp4 --context "distributed systems lecture"
 
+# Audio file
+vidistill ./podcast.mp3
+
 # Custom output directory
 vidistill ./demo.mp4 -o ./notes/
+
+# Output in another language
+vidistill ./lecture.mp4 --lang zh
 ```
+
+### Extract
+
+Pull specific data from a previously processed video or re-run a targeted pass on a video file.
+
+```
+vidistill extract <type> <source>
+```
+
+**Arguments:**
+
+- `type` — what to extract: `code`, `links`, `people`, `transcript`, or `commands`
+- `source` — path to a vidistill output directory or a video/audio file
+
+**Examples:**
+
+```bash
+# Extract code from existing output (no API calls)
+vidistill extract code ./vidistill-output/my-video/
+
+# Extract links from a video file (runs targeted pipeline)
+vidistill extract links ./lecture.mp4
+```
+
+When pointed at an output directory, extract reads from already-generated files with zero API calls. When pointed at a video file, it runs a minimal pipeline with only the passes needed for the requested data type.
 
 ## API Key
 
@@ -63,7 +95,9 @@ vidistill-output/my-video/
 ├── transcript.md      # full timestamped transcript
 ├── combined.md        # transcript + visual notes merged
 ├── notes.md           # meeting/lecture notes
-├── code.md            # extracted code blocks and reconstructions
+├── code/              # extracted and reconstructed source files
+│   ├── *.ext          # individual source files
+│   └── code-timeline.md  # code evolution timeline
 ├── people.md          # speakers and participants
 ├── chat.md            # chat messages and links
 ├── action-items.md    # tasks and follow-ups
@@ -73,21 +107,25 @@ vidistill-output/my-video/
 └── raw/               # raw pass outputs
 ```
 
-Which files are generated depends on the video content — a coding tutorial gets `code.md`, a meeting gets `people.md` and `action-items.md`, etc.
+Which files are generated depends on the video content — a coding tutorial gets `code/`, a meeting gets `people.md` and `action-items.md`, etc.
 
 ## How It Works
 
-1. **Input** — downloads YouTube video via yt-dlp or reads local file, compresses if over 2GB
+Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Supported audio formats: MP3, AAC, WAV, FLAC, OGG, M4A.
+
+1. **Input** — downloads YouTube video via yt-dlp or reads local file (video or audio), compresses if over 2GB
 2. **Pass 0** — scene analysis to classify video type and determine processing strategy
 3. **Pass 1** — transcript extraction with speaker identification
 4. **Pass 2** — visual content extraction (screen states, diagrams, slides)
 5. **Pass 3** — specialist passes based on video type:
-   - 3a: code reconstruction (coding videos)
-   - 3b: people and social dynamics (meetings)
-   - 3c: chat and links (live streams)
-   - 3d: implicit signals (all types)
+   - 3c: chat and links (live streams) — per segment
+   - 3d: implicit signals (all types) — per segment
+   - 3b: people and social dynamics (meetings) — whole video
+   - 3a: code reconstruction (coding videos) — whole video, runs 3x with consensus voting and validation
 6. **Synthesis** — cross-references all passes into unified analysis
 7. **Output** — generates structured markdown files
+
+Audio files skip visual passes and go straight to transcript, people, implicit signals, and synthesis.
 
 Long videos are segmented automatically. Passes that fail are skipped gracefully.
 

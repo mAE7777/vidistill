@@ -229,6 +229,39 @@ describe('determineStrategy', () => {
     });
   });
 
+  describe('audio type', () => {
+    it('includes transcript, people, implicit, synthesis', () => {
+      const result = determineStrategy(makeProfile({ type: 'audio' }));
+      expect(result.passes).toContain('transcript');
+      expect(result.passes).toContain('people');
+      expect(result.passes).toContain('implicit');
+      expect(result.passes).toContain('synthesis');
+    });
+
+    it('does NOT include visual pass', () => {
+      const result = determineStrategy(makeProfile({ type: 'audio' }));
+      expect(result.passes).not.toContain('visual');
+    });
+
+    it('does NOT include code pass', () => {
+      const result = determineStrategy(makeProfile({ type: 'audio' }));
+      expect(result.passes).not.toContain('code');
+    });
+
+    it('does NOT include chat pass', () => {
+      const result = determineStrategy(makeProfile({ type: 'audio' }));
+      expect(result.passes).not.toContain('chat');
+    });
+
+    it('does NOT include code pass even when hasCode is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'audio', visualContent: { ...makeProfile().visualContent, hasCode: true } })
+      );
+      expect(result.passes).not.toContain('code');
+      expect(result.passes).not.toContain('visual');
+    });
+  });
+
   describe('acceptance criteria', () => {
     it('coding with hasCode: true — passes includes code', () => {
       const result = determineStrategy(

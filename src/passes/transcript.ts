@@ -1,6 +1,6 @@
 import { type MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_1 } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_1, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_1 } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Segment, Pass1Result } from '../types/index.js';
@@ -12,10 +12,11 @@ export interface RunTranscriptParams {
   segment: Segment;
   model: string;
   resolution?: MediaResolution;
+  lang?: string;
 }
 
 export async function runTranscript(params: RunTranscriptParams): Promise<Pass1Result> {
-  const { client, fileUri, mimeType, segment, model, resolution } = params;
+  const { client, fileUri, mimeType, segment, model, resolution, lang } = params;
 
   const contents = [
     {
@@ -39,7 +40,7 @@ export async function runTranscript(params: RunTranscriptParams): Promise<Pass1R
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_1,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_1, lang),
       responseSchema: SCHEMA_PASS_1,
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),

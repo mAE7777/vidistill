@@ -71,33 +71,39 @@ const DEFAULT_PROFILE: VideoProfile = {
 };
 
 export async function runPipeline(config: RunPipelineConfig): Promise<PipelineResult> {
-  const { client, fileUri, mimeType, duration, model, rateLimiter, onProgress, onWait, isShuttingDown } = config;
+  const { client, fileUri, mimeType, duration, model, rateLimiter, onProgress, onWait, isShuttingDown, lang } = config;
 
   const errors: string[] = [];
   const passesRun: string[] = [];
 
-  // Pass 0: Scene analysis
-  onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'running' });
-
   let videoProfile: VideoProfile;
   let strategy: PassStrategy;
 
-  const pass0Attempt = await withRetry(
-    () => rateLimiter.execute(() => runSceneAnalysis({ client, fileUri, mimeType, duration, model }), { onWait }),
-    'pass0',
-  );
-
-  if (pass0Attempt.error !== null) {
-    log.warn(pass0Attempt.error);
-    errors.push(pass0Attempt.error);
+  if (config.overrideStrategy != null) {
+    // Skip Pass 0 when a strategy override is provided
     videoProfile = DEFAULT_PROFILE;
+    strategy = config.overrideStrategy;
   } else {
-    videoProfile = pass0Attempt.result ?? DEFAULT_PROFILE;
+    // Pass 0: Scene analysis
+    onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'running' });
+
+    const pass0Attempt = await withRetry(
+      () => rateLimiter.execute(() => runSceneAnalysis({ client, fileUri, mimeType, duration, model, lang }), { onWait }),
+      'pass0',
+    );
+
+    if (pass0Attempt.error !== null) {
+      log.warn(pass0Attempt.error);
+      errors.push(pass0Attempt.error);
+      videoProfile = DEFAULT_PROFILE;
+    } else {
+      videoProfile = pass0Attempt.result ?? DEFAULT_PROFILE;
+    }
+
+    strategy = determineStrategy(videoProfile);
+
+    onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
   }
-
-  strategy = determineStrategy(videoProfile);
-
-  onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
 
   // Build segment plan from strategy
   const plan = createSegmentPlan(duration, {
@@ -145,7 +151,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
     let pass1: Pass1Result | null = null;
     const pass1Attempt = await withRetry(
-      () => rateLimiter.execute(() => runTranscript({ client, fileUri, mimeType, segment, model, resolution }), { onWait }),
+      () => rateLimiter.execute(() => runTranscript({ client, fileUri, mimeType, segment, model, resolution, lang }), { onWait }),
       `segment ${i} pass1`,
     );
 
@@ -176,6 +182,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               model,
               resolution,
               pass1Transcript: pass1 ?? undefined,
+              lang,
             }),
           { onWait },
         ),
@@ -209,6 +216,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
                 model: MODELS.flash,
                 resolution,
                 pass2Result: pass2 ?? undefined,
+                lang,
               }),
             { onWait },
           ),
@@ -243,6 +251,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
                 resolution,
                 pass1Result: pass1 ?? undefined,
                 pass2Result: pass2 ?? undefined,
+                lang,
               }),
             { onWait },
           ),
@@ -306,6 +315,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               mimeType,
               model: MODELS.flash,
               pass1Results,
+              lang,
             }),
           { onWait },
         ),
@@ -342,6 +352,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               resolution,
               pass1Results,
               pass2Results,
+              lang,
             }),
           { onWait },
         ),
@@ -398,6 +409,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               peopleExtraction,
               codeReconstruction,
               context: config.context,
+              lang,
             }),
           { onWait },
         ),

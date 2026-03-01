@@ -1,5 +1,5 @@
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_3B } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_3B, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_3B } from '../gemini/schemas.js';
 import type { Pass1Result, PeopleExtraction } from '../types/index.js';
 
@@ -9,10 +9,11 @@ export interface RunPeopleExtractionParams {
   mimeType: string;
   model: string;
   pass1Results: (Pass1Result | null)[];
+  lang?: string;
 }
 
 export async function runPeopleExtraction(params: RunPeopleExtractionParams): Promise<PeopleExtraction> {
-  const { client, fileUri, mimeType, model, pass1Results } = params;
+  const { client, fileUri, mimeType, model, pass1Results, lang } = params;
 
   const hasAnyTranscript = pass1Results.some((r) => r != null);
 
@@ -41,7 +42,7 @@ export async function runPeopleExtraction(params: RunPeopleExtractionParams): Pr
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_3B,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_3B, lang),
       responseSchema: SCHEMA_PASS_3B,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,

@@ -60,6 +60,36 @@ const MAGIC = {
   flv: Buffer.from([0x46, 0x4c, 0x56, 0x01, 0, 0, 0, 0, 0, 0, 0, 0]),
   wmv: Buffer.from([0x30, 0x26, 0xb2, 0x75, 0, 0, 0, 0, 0, 0, 0, 0]),
   txt: Buffer.from('hello world!', 'ascii'),
+  // Audio formats
+  mp3SyncWord: Buffer.from([0xff, 0xfb, 0x90, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]),
+  mp3Id3: (() => {
+    const b = Buffer.alloc(12, 0);
+    b.write('ID3', 0, 'ascii');
+    return b;
+  })(),
+  flac: (() => {
+    const b = Buffer.alloc(12, 0);
+    b.write('fLaC', 0, 'ascii');
+    return b;
+  })(),
+  ogg: (() => {
+    const b = Buffer.alloc(12, 0);
+    b.write('OggS', 0, 'ascii');
+    return b;
+  })(),
+  wav: (() => {
+    const b = Buffer.alloc(12, 0);
+    b.write('RIFF', 0, 'ascii');
+    b.write('WAVE', 8, 'ascii');
+    return b;
+  })(),
+  m4a: ftypBuf('M4A '),
+  m4b: ftypBuf('M4B '),
+  m4aAmbiguous: ftypBuf('isom'), // ambiguous brand — relies on extension
+  // AAC ADTS: 0xFF 0xF1 (MPEG-4 AAC with CRC)
+  aac: Buffer.from([0xff, 0xf1, 0x50, 0x80, 0, 0, 0, 0, 0, 0, 0, 0]),
+  // MP3 sync variant: 0xFF 0xF3 (MPEG2 Layer III)
+  mp3SyncVariant: Buffer.from([0xff, 0xf3, 0x90, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]),
 };
 
 // Matroska EBML header + 'matroska' doctype string padded to 64 bytes
@@ -288,5 +318,143 @@ describe('temp file cleanup', () => {
     const unlinkCalls = (fs.unlinkSync as ReturnType<typeof vi.fn>).mock.calls as string[][];
     const cleanedPaths = unlinkCalls.map(c => c[0]);
     expect(cleanedPaths.some((p: string) => p.endsWith('.mp4'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audio MIME detection — >= 8 tests covering all 6 formats + edge cases
+// ---------------------------------------------------------------------------
+describe('audio MIME detection', () => {
+  const AUDIO_UPLOADED: UploadedFile = {
+    uri: 'https://generativelanguage.googleapis.com/v1beta/files/audio1',
+    mimeType: 'audio/mp3',
+    name: 'files/audio1',
+    duration: 60,
+  };
+
+  it('detects MP3 via ID3 tag (ID3 at offset 0)', async () => {
+    setupFsMocks(MAGIC.mp3Id3, [1 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp3' });
+
+    const result = await handleLocalFile('/audio/track.mp3', mockClient);
+
+    expect(result.isAudio).toBe(true);
+    // Should not call ffmpeg (no MKV conversion, no compression)
+    const calls = execMock().mock.calls as [string, string[]][];
+    expect(calls.filter(c => Array.isArray(c[1]) && c[1].includes('scale=-2:720'))).toHaveLength(0);
+    expect(calls.filter(c => Array.isArray(c[1]) && c[1].includes('copy'))).toHaveLength(0);
+  });
+
+  it('detects MP3 via sync word (0xFF 0xFB at offset 0)', async () => {
+    setupFsMocks(MAGIC.mp3SyncWord, [1 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp3' });
+
+    const result = await handleLocalFile('/audio/track.mp3', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects FLAC via fLaC magic bytes', async () => {
+    setupFsMocks(MAGIC.flac, [5 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/flac' });
+
+    const result = await handleLocalFile('/audio/track.flac', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects OGG via OggS magic bytes', async () => {
+    setupFsMocks(MAGIC.ogg, [2 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/ogg' });
+
+    const result = await handleLocalFile('/audio/track.ogg', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects WAV via RIFF + WAVE magic bytes', async () => {
+    setupFsMocks(MAGIC.wav, [10 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/wav' });
+
+    const result = await handleLocalFile('/audio/track.wav', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects M4A via explicit M4A brand in ftyp box', async () => {
+    setupFsMocks(MAGIC.m4a, [3 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp4' });
+
+    const result = await handleLocalFile('/audio/track.m4a', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects M4B via explicit M4B brand in ftyp box', async () => {
+    setupFsMocks(MAGIC.m4b, [3 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp4' });
+
+    const result = await handleLocalFile('/audio/chapter.m4b', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects M4A via .m4a extension when ftyp brand is ambiguous (isom)', async () => {
+    setupFsMocks(MAGIC.m4aAmbiguous, [3 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp4' });
+
+    const result = await handleLocalFile('/audio/track.m4a', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('does NOT treat a plain MP4 (isom brand, .mp4 extension) as audio', async () => {
+    setupFsMocks(MAGIC.mp4, [1 * GB, 1 * GB]);
+    mockUploadFile.mockResolvedValue(UPLOADED);
+
+    const result = await handleLocalFile('/videos/video.mp4', mockClient);
+
+    expect(result.isAudio).toBe(false);
+  });
+
+  it('WAV magic with AVI  at offset 8 is detected as AVI (video), not audio', async () => {
+    // The AVI MAGIC has RIFF at 0 but 'AVI ' at 8 — not WAVE — so isAudio should be false
+    setupFsMocks(MAGIC.avi, [1 * GB, 1 * GB]);
+    mockUploadFile.mockResolvedValue(UPLOADED);
+
+    const result = await handleLocalFile('/videos/video.avi', mockClient);
+
+    expect(result.isAudio).toBe(false);
+  });
+
+  it('detects AAC via ADTS frame header (0xFF 0xF1)', async () => {
+    setupFsMocks(MAGIC.aac, [1 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/aac' });
+
+    const result = await handleLocalFile('/audio/track.aac', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('detects MP3 sync variant 0xFF 0xF3 (MPEG2 Layer III)', async () => {
+    setupFsMocks(MAGIC.mp3SyncVariant, [1 * 1024 * 1024]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/mp3' });
+
+    const result = await handleLocalFile('/audio/track.mp3', mockClient);
+
+    expect(result.isAudio).toBe(true);
+  });
+
+  it('audio files skip ffmpeg compression even when over 2GB (uploads directly)', async () => {
+    setupFsMocks(MAGIC.flac, [2.5 * GB]);
+    mockUploadFile.mockResolvedValue({ ...AUDIO_UPLOADED, mimeType: 'audio/flac' });
+
+    const result = await handleLocalFile('/audio/large.flac', mockClient);
+
+    expect(result.isAudio).toBe(true);
+    // No compression should be called
+    const calls = execMock().mock.calls as [string, string[]][];
+    expect(calls.filter(c => Array.isArray(c[1]) && c[1].includes('scale=-2:720'))).toHaveLength(0);
+    expect(mockUploadFile).toHaveBeenCalledOnce();
   });
 });

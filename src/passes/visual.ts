@@ -1,6 +1,6 @@
 import { type MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_2_TEMPLATE } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_2_TEMPLATE, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_2 } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Segment, Pass1Result, Pass2Result } from '../types/index.js';
@@ -13,10 +13,11 @@ export interface RunVisualParams {
   model: string;
   resolution?: MediaResolution;
   pass1Transcript?: Pass1Result;
+  lang?: string;
 }
 
 export async function runVisual(params: RunVisualParams): Promise<Pass2Result> {
-  const { client, fileUri, mimeType, segment, model, resolution, pass1Transcript } = params;
+  const { client, fileUri, mimeType, segment, model, resolution, pass1Transcript, lang } = params;
 
   const transcriptText =
     pass1Transcript != null
@@ -25,9 +26,9 @@ export async function runVisual(params: RunVisualParams): Promise<Pass2Result> {
           .join('\n')
       : '[No transcript available for this segment]';
 
-  const systemInstruction = SYSTEM_INSTRUCTION_PASS_2_TEMPLATE.replace(
-    '{INJECT_PASS1_TRANSCRIPT_HERE}',
-    transcriptText,
+  const systemInstruction = withLanguage(
+    SYSTEM_INSTRUCTION_PASS_2_TEMPLATE.replace('{INJECT_PASS1_TRANSCRIPT_HERE}', transcriptText),
+    lang,
   );
 
   const contents = [

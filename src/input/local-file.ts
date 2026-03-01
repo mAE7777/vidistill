@@ -14,6 +14,7 @@ export interface LocalFileResult {
   mimeType: string;
   duration: number | undefined;
   uploadedFileName?: string;
+  isAudio: boolean;
 }
 
 interface MagicMatch {
@@ -23,7 +24,7 @@ interface MagicMatch {
 
 /**
  * Read the first 12 bytes of a file to detect its type via magic bytes.
- * Returns null if the file cannot be identified as a supported video format.
+ * Returns null if the file cannot be identified as a supported video/audio format.
  */
 function detectMimeType(filePath: string): MagicMatch | null {
   const fd = openSync(filePath, 'r');
@@ -34,15 +35,63 @@ function detectMimeType(filePath: string): MagicMatch | null {
     closeSync(fd);
   }
 
-  // MP4 / MOV / 3GPP — ftyp box at offset 4
+  // --- Audio formats (checked first) ---
+
+  // MP3 with ID3 tag — bytes 0-2 == 'ID3'
+  if (buf.slice(0, 3).toString('ascii') === 'ID3') {
+    return { mimeType: 'audio/mp3', isMkv: false };
+  }
+
+  // AAC ADTS — 0xFFF sync + layer bits == 00 (distinguishes from MPEG audio)
+  // MPEG-4 AAC: 0xF0/0xF1, MPEG-2 AAC: 0xF8/0xF9
+  if (buf[0] === 0xff && (buf[1] & 0xf0) === 0xf0 && (buf[1] & 0x06) === 0x00) {
+    return { mimeType: 'audio/aac', isMkv: false };
+  }
+
+  // MP3 / MPEG audio sync — byte 0 == 0xFF, byte 1 bits 7-5 == 111, layer != 00
+  // Covers all MPEG audio layer variants (0xFB, 0xF3, 0xF2, 0xFA, etc.)
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0 && (buf[1] & 0x06) !== 0x00) {
+    return { mimeType: 'audio/mp3', isMkv: false };
+  }
+
+  // FLAC — bytes 0-3 == 'fLaC'
+  if (buf.slice(0, 4).toString('ascii') === 'fLaC') {
+    return { mimeType: 'audio/flac', isMkv: false };
+  }
+
+  // OGG — bytes 0-3 == 'OggS'
+  if (buf.slice(0, 4).toString('ascii') === 'OggS') {
+    return { mimeType: 'audio/ogg', isMkv: false };
+  }
+
+  // WAV — bytes 0-3 == 'RIFF' AND bytes 8-11 == 'WAVE'
+  if (
+    buf.slice(0, 4).toString('ascii') === 'RIFF' &&
+    buf.slice(8, 12).toString('ascii') === 'WAVE'
+  ) {
+    return { mimeType: 'audio/wav', isMkv: false };
+  }
+
+  // --- Video formats ---
+
+  // MP4 / MOV / 3GPP / M4A — ftyp box at offset 4
   // Bytes 4–7 == 'ftyp'
   if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
     const brand = buf.slice(8, 12).toString('ascii');
+    // M4A and M4B specific brands
+    if (brand === 'M4A ' || brand === 'M4B ') {
+      return { mimeType: 'audio/mp4', isMkv: false };
+    }
     if (brand.startsWith('qt  ')) {
       return { mimeType: 'video/quicktime', isMkv: false };
     }
     if (brand.startsWith('3gp') || brand.startsWith('3g2')) {
       return { mimeType: 'video/3gpp', isMkv: false };
+    }
+    // Ambiguous brands: check file extension for .m4a/.m4b
+    const ext = extname(filePath).toLowerCase();
+    if (ext === '.m4a' || ext === '.m4b') {
+      return { mimeType: 'audio/mp4', isMkv: false };
     }
     // Default: treat all other ftyp brands as MP4
     return { mimeType: 'video/mp4', isMkv: false };
@@ -174,19 +223,20 @@ export async function handleLocalFile(
     throw new Error(`File not found: ${filePath}`);
   }
 
-  // 2. MKV detection (before MIME check so we can give a targeted error if ffmpeg missing)
-  const isMkv = isMkvFile(filePath);
+  // 2. MIME type via magic bytes — detect audio before MKV/video checks
+  const mimeMatch = detectMimeType(filePath);
+  const isAudio = mimeMatch != null && mimeMatch.mimeType.startsWith('audio/');
 
-  // 3. MIME type via magic bytes (for non-MKV) — MKV has the EBML magic bytes shared with WebM
-  if (!isMkv) {
-    const match = detectMimeType(filePath);
-    if (!match) {
-      const ext = extname(filePath).toLowerCase();
-      throw new Error(`Unsupported video format: ${ext || basename(filePath)}`);
-    }
+  // 3. MKV detection (only relevant for video files)
+  const isMkv = !isAudio && isMkvFile(filePath);
+
+  // 4. Validate format: non-audio, non-MKV files must match a known video format
+  if (!isAudio && !isMkv && !mimeMatch) {
+    const ext = extname(filePath).toLowerCase();
+    throw new Error(`Unsupported video format: ${ext || basename(filePath)}`);
   }
 
-  // 4. File size: reject > 3 GB
+  // 5. File size: reject > 3 GB
   const originalSize = fileSize(filePath);
   if (originalSize > SIZE_3GB) {
     throw new Error('File exceeds 3GB limit');
@@ -198,15 +248,15 @@ export async function handleLocalFile(
   try {
     let workingPath = filePath;
 
-    // 5. Convert MKV → MP4
+    // 6. Convert MKV → MP4 (video only)
     if (isMkv) {
       const converted = convertMkvToMp4(workingPath);
       tempFiles.push(converted);
       workingPath = converted;
     }
 
-    // 6. Compress if > 2 GB
-    if (fileSize(workingPath) > SIZE_2GB) {
+    // 7. Compress if > 2 GB (video only — audio files skip compression)
+    if (!isAudio && fileSize(workingPath) > SIZE_2GB) {
       const compressed = compressTo720p(workingPath);
       tempFiles.push(compressed);
       workingPath = compressed;
@@ -218,7 +268,7 @@ export async function handleLocalFile(
       }
     }
 
-    // 7. Upload
+    // 8. Upload
     const uploaded: UploadedFile = await client.uploadFile(workingPath);
 
     return {
@@ -226,6 +276,7 @@ export async function handleLocalFile(
       mimeType: uploaded.mimeType,
       duration: uploaded.duration,
       uploadedFileName: uploaded.name,
+      isAudio,
     };
   } finally {
     for (const f of tempFiles) {

@@ -1,6 +1,6 @@
 import { type MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_3C } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_3C, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_3C } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Segment, Pass2Result, ChatExtraction } from '../types/index.js';
@@ -13,10 +13,11 @@ export interface RunChatExtractionParams {
   model: string;
   resolution?: MediaResolution;
   pass2Result?: Pass2Result | null;
+  lang?: string;
 }
 
 export async function runChatExtraction(params: RunChatExtractionParams): Promise<ChatExtraction> {
-  const { client, fileUri, mimeType, segment, model, resolution, pass2Result } = params;
+  const { client, fileUri, mimeType, segment, model, resolution, pass2Result, lang } = params;
 
   const visualNotesText =
     pass2Result != null && pass2Result.visual_notes.length > 0
@@ -62,7 +63,7 @@ export async function runChatExtraction(params: RunChatExtractionParams): Promis
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_3C,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_3C, lang),
       responseSchema: SCHEMA_PASS_3C,
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),

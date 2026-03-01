@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.4] - 2026-03-01
+
+### Added
+- Audio file support — MP3, WAV, FLAC, OGG, M4A, AAC detected via magic bytes, skips video-specific processing
+- `vidistill extract` command — pull transcript, code, links, people, or notes from existing output or directly from video without full pipeline
+- Multi-language output — `--lang` flag threads language instructions through all extraction passes
+
+### Fixed
+- `withLanguage()` guards against empty string language parameter
+- AAC ADTS format detection added (was missing from audio detection)
+- MP3 sync word broadened to cover all MPEG audio frame variants
+- Audio profiles no longer run code pass (requires visual data)
+- `extract` command validates parsed JSON before casting
+- `distill` peekIsAudio synced with broadened audio detection
+
 ## [0.2.3] - 2026-02-28
 
 ### Fixed

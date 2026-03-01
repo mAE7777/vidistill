@@ -226,3 +226,22 @@ COMPLETENESS TARGET:
 - The files_to_generate list should reflect what content was found, but output routing is handled automatically
 - The overview should be dense with specifics, not vague summary language
 `;
+
+export const LANGUAGE_NAMES: Record<string, string> = {
+  zh: 'Chinese',
+  ja: 'Japanese',
+  ko: 'Korean',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+};
+
+export function withLanguage(prompt: string, lang?: string): string {
+  if (!lang || lang === 'en') return prompt;
+  const languageName = LANGUAGE_NAMES[lang] ?? lang;
+  return `IMPORTANT: Generate ALL output text in ${languageName}.\nTimestamps, speaker labels, and code should remain in their original language.\n\n${prompt}`;
+}

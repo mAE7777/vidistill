@@ -1,6 +1,6 @@
 import { type MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_3D } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_3D, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_3D } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Segment, Pass1Result, Pass2Result, ImplicitSignals } from '../types/index.js';
@@ -14,10 +14,11 @@ export interface RunImplicitSignalsParams {
   resolution?: MediaResolution;
   pass1Result?: Pass1Result | null;
   pass2Result?: Pass2Result | null;
+  lang?: string;
 }
 
 export async function runImplicitSignals(params: RunImplicitSignalsParams): Promise<ImplicitSignals> {
-  const { client, fileUri, mimeType, segment, model, resolution, pass1Result, pass2Result } = params;
+  const { client, fileUri, mimeType, segment, model, resolution, pass1Result, pass2Result, lang } = params;
 
   const transcriptText =
     pass1Result != null
@@ -63,7 +64,7 @@ export async function runImplicitSignals(params: RunImplicitSignalsParams): Prom
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_3D,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_3D, lang),
       responseSchema: SCHEMA_PASS_3D,
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),

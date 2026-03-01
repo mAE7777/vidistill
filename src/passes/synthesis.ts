@@ -1,5 +1,5 @@
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_SYNTHESIS } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_SYNTHESIS, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_SYNTHESIS } from '../gemini/schemas.js';
 import type {
   SegmentResult,
@@ -17,6 +17,7 @@ export interface RunSynthesisParams {
   peopleExtraction?: PeopleExtraction | null;
   codeReconstruction?: CodeReconstruction | null;
   context?: string;
+  lang?: string;
 }
 
 function compileContext(params: RunSynthesisParams): string {
@@ -141,7 +142,7 @@ function compileContext(params: RunSynthesisParams): string {
 }
 
 export async function runSynthesis(params: RunSynthesisParams): Promise<SynthesisResult> {
-  const { client, model } = params;
+  const { client, model, lang } = params;
 
   const compiledContext = compileContext(params);
 
@@ -156,7 +157,7 @@ export async function runSynthesis(params: RunSynthesisParams): Promise<Synthesi
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_SYNTHESIS,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_SYNTHESIS, lang),
       responseSchema: SCHEMA_SYNTHESIS,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,

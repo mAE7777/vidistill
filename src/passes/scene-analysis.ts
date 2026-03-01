@@ -1,6 +1,6 @@
 import { MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_0 } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_0, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_0 } from '../gemini/schemas.js';
 import type { VideoProfile } from '../types/index.js';
 
@@ -11,10 +11,11 @@ export interface RunSceneAnalysisParams {
   duration: number;
   model: string;
   resolution?: MediaResolution;
+  lang?: string;
 }
 
 export async function runSceneAnalysis(params: RunSceneAnalysisParams): Promise<VideoProfile> {
-  const { client, fileUri, mimeType, duration, model, resolution } = params;
+  const { client, fileUri, mimeType, duration, model, resolution, lang } = params;
 
   const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const endSeconds = Math.min(180, safeDuration);
@@ -41,7 +42,7 @@ export async function runSceneAnalysis(params: RunSceneAnalysisParams): Promise<
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_0,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_0, lang),
       responseSchema: SCHEMA_PASS_0,
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : { mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW }),

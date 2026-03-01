@@ -1,6 +1,7 @@
 import { log, cancel } from '@clack/prompts';
 import pc from 'picocolors';
 import { basename, extname, resolve } from 'path';
+import { existsSync, openSync, readSync, closeSync } from 'fs';
 import { showConfigBox } from '../cli/ui.js';
 import { promptVideoSource, promptContext, promptConfirmation } from '../cli/prompts.js';
 import { resolveApiKey } from '../cli/config.js';
@@ -15,6 +16,45 @@ import { runPipeline } from '../core/pipeline.js';
 import { generateOutput, slugify } from '../output/generator.js';
 import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
+
+/**
+ * Quick audio detection from magic bytes for pre-pipeline display purposes.
+ * Returns true if the file at the given path appears to be an audio file.
+ */
+function peekIsAudio(filePath: string): boolean {
+  if (!existsSync(filePath)) return false;
+  try {
+    const fd = openSync(filePath, 'r');
+    const buf = Buffer.alloc(12);
+    try {
+      readSync(fd, buf, 0, 12, 0);
+    } finally {
+      closeSync(fd);
+    }
+    // ID3-tagged MP3
+    if (buf.slice(0, 3).toString('ascii') === 'ID3') return true;
+    // AAC ADTS — 0xFFF sync + layer bits == 00
+    if (buf[0] === 0xff && (buf[1] & 0xf0) === 0xf0 && (buf[1] & 0x06) === 0x00) return true;
+    // MP3 / MPEG audio sync — byte 0 == 0xFF, bits 7-5 == 111, layer != 00
+    if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0 && (buf[1] & 0x06) !== 0x00) return true;
+    // FLAC
+    if (buf.slice(0, 4).toString('ascii') === 'fLaC') return true;
+    // OGG
+    if (buf.slice(0, 4).toString('ascii') === 'OggS') return true;
+    // WAV
+    if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WAVE') return true;
+    // M4A brand in ftyp box
+    if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
+      const brand = buf.slice(8, 12).toString('ascii');
+      if (brand === 'M4A ' || brand === 'M4B ') return true;
+      const ext = extname(filePath).toLowerCase();
+      if (ext === '.m4a' || ext === '.m4b') return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 export interface DistillArgs {
   input?: string;
@@ -39,7 +79,16 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   if (!allFlagsProvided) {
     let confirmed = false;
     while (!confirmed) {
-      showConfigBox({ input: rawInput, context, output: args.output });
+      // Peek at audio type for display — best-effort, no error if file not yet accessible
+      const looksLikeUrl = /^https?:\/\/|^www\./i.test(rawInput.trim());
+      const inputIsAudio = !looksLikeUrl && peekIsAudio(rawInput.trim());
+      showConfigBox({
+        input: rawInput,
+        context,
+        output: args.output,
+        videoType: inputIsAudio ? 'audio' : undefined,
+        lang: args.lang,
+      });
       const choice = await promptConfirmation();
       switch (choice) {
         case 'start':
@@ -127,6 +176,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     duration,
     model,
     context,
+    lang: args.lang,
     rateLimiter,
     onProgress: (status) => {
       progress.update(status);

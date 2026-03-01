@@ -40,6 +40,13 @@ export function determineStrategy(profile: VideoProfile): PassStrategy {
       passes.add('chat');
       passes.add('implicit');
       break;
+    case 'audio':
+      // Audio-only: no visual analysis, no code (requires visual data)
+      passes.delete('visual');
+      passes.delete('code');
+      passes.add('people');
+      passes.add('implicit');
+      break;
     default:
       break;
   }

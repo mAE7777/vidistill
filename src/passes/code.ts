@@ -1,6 +1,6 @@
 import { type MediaResolution } from '@google/genai';
 import type { GeminiClient } from '../gemini/client.js';
-import { SYSTEM_INSTRUCTION_PASS_3A } from '../constants/prompts.js';
+import { SYSTEM_INSTRUCTION_PASS_3A, withLanguage } from '../constants/prompts.js';
 import { SCHEMA_PASS_3A } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Pass1Result, Pass2Result, CodeReconstruction } from '../types/index.js';
@@ -14,6 +14,7 @@ export interface RunCodeReconstructionParams {
   resolution?: MediaResolution;
   pass1Results: (Pass1Result | null)[];
   pass2Results: (Pass2Result | null)[];
+  lang?: string;
 }
 
 const MAX_CONTEXT_CHARS = 200_000;
@@ -101,7 +102,7 @@ export function compileContext(
 }
 
 export async function runCodeReconstruction(params: RunCodeReconstructionParams): Promise<CodeReconstruction> {
-  const { client, fileUri, mimeType, duration, model, resolution, pass1Results, pass2Results } = params;
+  const { client, fileUri, mimeType, duration, model, resolution, pass1Results, pass2Results, lang } = params;
 
   const contextText = compileContext(duration, pass1Results, pass2Results);
 
@@ -121,7 +122,7 @@ export async function runCodeReconstruction(params: RunCodeReconstructionParams)
     model,
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION_PASS_3A,
+      systemInstruction: withLanguage(SYSTEM_INSTRUCTION_PASS_3A, lang),
       responseSchema: SCHEMA_PASS_3A,
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),
