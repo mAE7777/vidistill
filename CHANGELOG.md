@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0] - 2026-02-28
+## [0.2.1] - 2026-02-28
 
 ### Added
 - Subcommand architecture — `vidistill distill` with manual dispatch, supports both `vidistill video.mp4` and `vidistill <command>` patterns
@@ -8,6 +8,24 @@
 - Two-phase progress display: spinner for scene analysis (indeterminate), progress bar for main pipeline (deterministic step counting)
 - Clean completion output with contextual tips based on pipeline results
 - Informative interruption messages showing completed step count on Ctrl+C
+
+### Changed
+- CLI entry point refactored from monolith to `src/commands/distill.ts` with root dispatcher
+- Config display uses `@clack/prompts note()` boxed layout
+- Progress display no longer shows internal details (video type, strategy, segment count) — only progress bar, completion summary, and errors
+- Confirmation prompt skipped when all inputs provided via CLI flags
+- `@clack/prompts` upgraded from `^0.9.1` to `1.0.1` (exact pin)
+- Pipeline emits per-consensus-run progress events instead of single combined event
+
+### Fixed
+- Interrupted pipeline no longer shows contradictory "Done in..." message after Ctrl+C
+- Unsafe `as { run: ... }` cast on dynamic subcommand import replaced with runtime validation
+- Force-exit SIGINT handler properly deregistered to prevent listener leaks
+- `@clack/prompts` v1.0 `validate` callback guard for `string | undefined`
+
+## [0.2.0] - 2026-02-28
+
+### Added
 - Multi-run consensus voting for code reconstruction — 3 independent runs, 2-agreement threshold eliminates hallucinated files
 - 5-gate validation pipeline for extracted code: structural integrity, filesystem safety, cross-reference, consensus agreement, content quality
 - Whole-video code reconstruction — processes entire video as a single pass instead of per-segment
@@ -17,22 +35,12 @@
 - Context compilation with temporal segment headers for multi-segment videos
 
 ### Changed
-- CLI entry point refactored from monolith to `src/commands/distill.ts` with root dispatcher
-- Config display uses `@clack/prompts note()` boxed layout
-- Progress display no longer shows internal details (video type, strategy, segment count) — only progress bar, completion summary, and errors
-- Confirmation prompt skipped when all inputs provided via CLI flags
-- `@clack/prompts` upgraded from `^0.9.1` to `1.0.1` (exact pin)
 - Code pass runs once after all segments complete (previously per-segment with merge)
 - Temperature tuned per pass: 0.0 for extraction, 0.1 for reasoning, 0.2 for scene analysis
 - Model constants refactored from array indexing to named object (`MODELS.flash`, `MODELS.pro`)
 - Code context truncation prioritizes code-bearing segments and truncates at newline boundaries
-- Pipeline emits per-consensus-run progress events instead of single combined event
 
 ### Fixed
-- Interrupted pipeline no longer shows contradictory "Done in..." message after Ctrl+C
-- Unsafe `as { run: ... }` cast on dynamic subcommand import replaced with runtime validation
-- Force-exit SIGINT handler properly deregistered to prevent listener leaks
-- `@clack/prompts` v1.0 `validate` callback guard for `string | undefined`
 - Runtime validation for YouTube oEmbed API responses replaces unsafe type cast
 - Error messages sanitized to cap length and prevent internal detail leakage
 - Duplicate filename normalization logic extracted to shared utility
