@@ -194,6 +194,13 @@ export interface ImplicitSignals {
   emphasis_patterns: EmphasisPattern[];
 }
 
+export interface PrerequisiteConcept {
+  concept: string;
+  assumed_knowledge_level: 'basic' | 'intermediate' | 'advanced';
+  brief_explanation: string;
+  timestamp_first_assumed: string;
+}
+
 export interface SynthesisResult {
   overview: string;
   key_decisions: MeetingNotesDecision[];
@@ -203,6 +210,7 @@ export interface SynthesisResult {
   suggestions: string[];
   topics: MeetingNotesTopic[];
   files_to_generate: string[];
+  prerequisites?: PrerequisiteConcept[];
 }
 
 export interface PipelineConfig {
@@ -255,6 +263,14 @@ export interface Segment {
   endTime: number;
 }
 
+export interface ProgressFile {
+  schemaVersion: number;
+  vidistillVersion: string;
+  completedPasses: Record<string, string>; // passKey -> raw filename (without .json)
+  videoProfile?: VideoProfile;
+  strategy?: PassStrategy;
+}
+
 export interface RunPipelineConfig {
   client: GeminiClient;
   fileUri: string;
@@ -269,6 +285,8 @@ export interface RunPipelineConfig {
   onWait?: (delayMs: number) => void;
   isShuttingDown?: () => boolean;
   overrideStrategy?: PassStrategy;
+  preloadedResults?: Record<string, unknown>;
+  onPassComplete?: (passKey: string, result: unknown) => void;
 }
 
 export interface GenerateOutputParams {

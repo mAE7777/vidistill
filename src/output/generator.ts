@@ -11,6 +11,8 @@ import { writeChat } from './chat.js';
 import { writeLinks } from './links.js';
 import { writeActionItems } from './action-items.js';
 import { writeInsights } from './insights.js';
+import { writePrereqs } from './prereqs.js';
+import { generateTimeline } from './timeline.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
 
 /**
@@ -55,6 +57,16 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   }
   if (synthesisResult != null) optional.add('notes.md');
   if (peopleExtraction != null) optional.add('people.md');
+  if (
+    synthesisResult?.prerequisites != null &&
+    Array.isArray(synthesisResult.prerequisites) &&
+    synthesisResult.prerequisites.length > 0
+  ) {
+    optional.add('prereqs.md');
+  }
+
+  const hasPass1 = segments.some((s) => s.pass1 != null);
+  if (hasPass1 || hasPass2) optional.add('timeline.html');
 
   return optional;
 }
@@ -198,6 +210,28 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       }
     } catch (err) {
       errors.push(`insights.md: ${String(err)}`);
+    }
+  }
+
+  // Step 2j: prereqs.md — conditional on non-empty prerequisites array
+  if (filesToGenerate.has('prereqs.md')) {
+    try {
+      const content = writePrereqs({ prerequisites: pipelineResult.synthesisResult?.prerequisites });
+      if (content != null) {
+        await writeOutputFile('prereqs.md', content);
+      }
+    } catch (err) {
+      errors.push(`prereqs.md: ${String(err)}`);
+    }
+  }
+
+  // Step 2k: timeline.html — conditional on pass1 or pass2 data
+  if (filesToGenerate.has('timeline.html')) {
+    try {
+      const content = generateTimeline({ pipelineResult, duration });
+      await writeOutputFile('timeline.html', content);
+    } catch (err) {
+      errors.push(`timeline.html: ${String(err)}`);
     }
   }
 

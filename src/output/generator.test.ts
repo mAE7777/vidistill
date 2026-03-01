@@ -90,6 +90,7 @@ function makeFullPipelineResult(): PipelineResult {
       suggestions: [],
       topics: [],
       files_to_generate: ['guide.md', 'transcript.md', 'code/', 'combined.md'],
+      prerequisites: [],
     },
     peopleExtraction: { participants: [], relationships: [] },
   };

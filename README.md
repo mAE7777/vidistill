@@ -78,11 +78,18 @@ vidistill-output/my-video/
 ├── action-items.md    # tasks and follow-ups
 ├── insights.md        # implicit signals and analysis
 ├── links.md           # all URLs mentioned
+├── prereqs.md         # prerequisite knowledge (when detected)
+├── timeline.html      # interactive visual timeline
 ├── metadata.json      # processing metadata
+├── progress.json      # resume checkpoint (during processing)
 └── raw/               # raw pass outputs
 ```
 
 Which files are generated depends on the video content — a coding tutorial gets `code/`, a meeting gets `people.md` and `action-items.md`, etc.
+
+### Resume
+
+If a run is interrupted (Ctrl+C), progress is saved automatically. Re-running the same command detects the incomplete run and offers to resume from where it left off.
 
 ## How It Works
 

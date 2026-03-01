@@ -20,6 +20,7 @@ const SYNTHESIS: SynthesisResult = {
   suggestions: ['Try the examples', 'Review the docs'],
   topics: [],
   files_to_generate: ['src/index.ts', 'tsconfig.json'],
+  prerequisites: [],
 };
 
 const PROFILE: VideoProfile = {

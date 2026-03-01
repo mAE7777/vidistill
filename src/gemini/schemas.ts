@@ -508,6 +508,24 @@ export const SCHEMA_SYNTHESIS: Schema = {
       items: { type: Type.STRING },
       description: 'Names of output files that should be generated from this video (e.g. "transcript.md", "code/main.py")',
     },
+    prerequisites: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          concept: { type: Type.STRING, description: 'The prerequisite concept or technology name' },
+          assumed_knowledge_level: {
+            type: Type.STRING,
+            enum: ['basic', 'intermediate', 'advanced'],
+            description: 'The level of knowledge the video assumes the viewer already has',
+          },
+          brief_explanation: { type: Type.STRING, description: 'One or two sentences describing what this prerequisite is and why it matters for understanding the video' },
+          timestamp_first_assumed: { type: Type.STRING, description: 'HH:MM:SS when this prerequisite knowledge is first assumed by the content' },
+        },
+        required: ['concept', 'assumed_knowledge_level', 'brief_explanation', 'timestamp_first_assumed'],
+      },
+      description: 'Knowledge or skills the video assumes the viewer already has. Return empty array if no prerequisites are assumed.',
+    },
   },
-  required: ['overview', 'key_decisions', 'key_concepts', 'action_items', 'questions_raised', 'suggestions', 'topics', 'files_to_generate'],
+  required: ['overview', 'key_decisions', 'key_concepts', 'action_items', 'questions_raised', 'suggestions', 'topics', 'files_to_generate', 'prerequisites'],
 };

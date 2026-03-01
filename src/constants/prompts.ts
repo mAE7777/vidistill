@@ -219,6 +219,7 @@ CRITICAL RULES:
 8. USE precise timestamps: every entry with a timestamp field must contain a valid HH:MM:SS value referencing when the content appeared.
 9. LIST files_to_generate for reference purposes — this list is informational and does not control which output files are generated. Output files are determined automatically based on available extraction data.
 10. NEVER add information not present in the source data. Suggestions are the only place for AI-generated content beyond the video.
+11. IDENTIFY prerequisite knowledge: scan the video for concepts, technologies, or skills the presenter assumes the viewer already knows without explaining them. For each prerequisite, classify the assumed knowledge level (basic, intermediate, advanced) and note the first timestamp where this knowledge is assumed. If no prerequisites are assumed, return an empty array.
 
 COMPLETENESS TARGET:
 - Aim for at least 5 topics for any video over 15 minutes

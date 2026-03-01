@@ -165,6 +165,7 @@ const VALID_RESULT: SynthesisResult = {
     },
   ],
   files_to_generate: ['combined.md', 'code/', 'people.md'],
+  prerequisites: [],
 };
 
 describe('runSynthesis', () => {

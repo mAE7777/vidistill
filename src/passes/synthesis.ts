@@ -175,7 +175,8 @@ export async function runSynthesis(params: RunSynthesisParams): Promise<Synthesi
     !Array.isArray((result as Record<string, unknown>)['action_items']) ||
     !Array.isArray((result as Record<string, unknown>)['questions_raised']) ||
     !Array.isArray((result as Record<string, unknown>)['suggestions']) ||
-    !Array.isArray((result as Record<string, unknown>)['topics'])
+    !Array.isArray((result as Record<string, unknown>)['topics']) ||
+    !Array.isArray((result as Record<string, unknown>)['prerequisites'])
   ) {
     throw new Error('Incomplete SynthesisResult from Gemini synthesis');
   }
