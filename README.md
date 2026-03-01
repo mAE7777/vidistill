@@ -50,31 +50,6 @@ vidistill ./demo.mp4 -o ./notes/
 vidistill ./lecture.mp4 --lang zh
 ```
 
-### Extract
-
-Pull specific data from a previously processed video or re-run a targeted pass on a video file.
-
-```
-vidistill extract <type> <source>
-```
-
-**Arguments:**
-
-- `type` — what to extract: `code`, `links`, `people`, `transcript`, or `commands`
-- `source` — path to a vidistill output directory or a video/audio file
-
-**Examples:**
-
-```bash
-# Extract code from existing output (no API calls)
-vidistill extract code ./vidistill-output/my-video/
-
-# Extract links from a video file (runs targeted pipeline)
-vidistill extract links ./lecture.mp4
-```
-
-When pointed at an output directory, extract reads from already-generated files with zero API calls. When pointed at a video file, it runs a minimal pipeline with only the passes needed for the requested data type.
-
 ## API Key
 
 vidistill needs a Gemini API key. It checks these sources in order:
@@ -118,7 +93,7 @@ Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Support
 3. **Pass 1** — transcript extraction with speaker identification
 4. **Pass 2** — visual content extraction (screen states, diagrams, slides)
 5. **Pass 3** — specialist passes based on video type:
-   - 3c: chat and links (live streams) — per segment
+   - 3c: chat and links (live streams) — per segment, runs 3x with consensus voting
    - 3d: implicit signals (all types) — per segment
    - 3b: people and social dynamics (meetings) — whole video
    - 3a: code reconstruction (coding videos) — whole video, runs 3x with consensus voting and validation

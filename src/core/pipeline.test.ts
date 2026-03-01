@@ -15,7 +15,7 @@ vi.mock('../passes/implicit.js', () => ({ runImplicitSignals: vi.fn() }));
 vi.mock('../passes/synthesis.js', () => ({ runSynthesis: vi.fn() }));
 vi.mock('./strategy.js', () => ({ determineStrategy: vi.fn() }));
 vi.mock('./segmenter.js', () => ({ createSegmentPlan: vi.fn() }));
-vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn() }));
+vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn(), runLinkConsensus: vi.fn() }));
 vi.mock('./validator.js', () => ({ validateCodeReconstruction: vi.fn() }));
 
 import { runTranscript } from '../passes/transcript.js';
@@ -28,8 +28,8 @@ import { runImplicitSignals } from '../passes/implicit.js';
 import { runSynthesis } from '../passes/synthesis.js';
 import { determineStrategy } from './strategy.js';
 import { createSegmentPlan } from './segmenter.js';
-import { runCodeConsensus } from './consensus.js';
-import type { ConsensusResult } from './consensus.js';
+import { runCodeConsensus, runLinkConsensus } from './consensus.js';
+import type { ConsensusResult, LinkConsensusResult } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
 import type { ValidationResult } from './validator.js';
 
@@ -44,6 +44,7 @@ const mockRunSynthesis = vi.mocked(runSynthesis);
 const mockDetermineStrategy = vi.mocked(determineStrategy);
 const mockCreateSegmentPlan = vi.mocked(createSegmentPlan);
 const mockRunCodeConsensus = vi.mocked(runCodeConsensus);
+const mockRunLinkConsensus = vi.mocked(runLinkConsensus);
 const mockValidateCodeReconstruction = vi.mocked(validateCodeReconstruction);
 
 const MOCK_PROFILE: VideoProfile = {
@@ -103,6 +104,16 @@ function makeCodeReconstruction(): CodeReconstruction {
 
 function makeChatExtraction(): ChatExtraction {
   return { messages: [], links: [] };
+}
+
+function makeLinkConsensusResult(overrides?: Partial<LinkConsensusResult>): LinkConsensusResult {
+  return {
+    merged: makeChatExtraction(),
+    rejectedUrls: [],
+    runsCompleted: 3,
+    runsAttempted: 3,
+    ...overrides,
+  };
 }
 
 function makeImplicitSignals(): ImplicitSignals {
@@ -265,7 +276,7 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunChatExtraction.mockResolvedValueOnce(makeChatExtraction());
+      mockRunLinkConsensus.mockResolvedValueOnce(makeLinkConsensusResult());
       mockRunImplicitSignals.mockResolvedValueOnce(makeImplicitSignals());
     }
     mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());
@@ -860,7 +871,7 @@ describe('runPipeline', () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
-      mockRunChatExtraction.mockResolvedValueOnce(makeChatExtraction());
+      mockRunLinkConsensus.mockResolvedValueOnce(makeLinkConsensusResult());
       mockRunImplicitSignals.mockResolvedValueOnce(makeImplicitSignals());
     }
     mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());

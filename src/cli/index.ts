@@ -2,7 +2,6 @@ import { createRequire } from 'node:module';
 import { defineCommand, runMain } from 'citty';
 import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
-import { run as runExtract } from '../commands/extract.js';
 import { run as runAsk } from '../commands/ask.js';
 import { run as runSearch } from '../commands/search.js';
 import { run as runMcp } from '../commands/mcp.js';
@@ -17,7 +16,6 @@ const DEFAULT_OUTPUT = './vidistill-output/';
 const SUBCOMMANDS: Record<string, (args: string[]) => Promise<void>> = {
   ask: runAsk,
   search: runSearch,
-  extract: runExtract,
   mcp: runMcp,
   watch: runWatch,
   'rename-speakers': runRenameSpeakers,

@@ -10,7 +10,7 @@ import { runSynthesis } from '../passes/synthesis.js';
 import { determineStrategy } from './strategy.js';
 import { createSegmentPlan } from './segmenter.js';
 import { MODELS } from '../gemini/models.js';
-import { runCodeConsensus } from './consensus.js';
+import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
 import type {
   RunPipelineConfig,
@@ -117,9 +117,10 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const n = segments.length;
 
   // Calculate total steps for progress tracking
+  const linkConsensusRuns = 3;
   const callsPerSegment =
     2 +
-    (strategy.passes.includes('chat') ? 1 : 0) +
+    (strategy.passes.includes('chat') ? linkConsensusRuns : 0) +
     (strategy.passes.includes('implicit') ? 1 : 0);
   const postSegmentCalls =
     (strategy.passes.includes('people') ? 1 : 0) +
@@ -200,12 +201,14 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     currentStep++;
     onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
 
-    // Pass 3c: Chat extraction (per segment)
+    // Pass 3c: Chat extraction with link consensus (per segment)
     let pass3c: ChatExtraction | null | undefined;
     if (strategy.passes.includes('chat')) {
       onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'running', totalSteps });
-      const pass3cAttempt = await withRetry(
-        () =>
+
+      const linkConsensusResult = await runLinkConsensus({
+        config: { runs: linkConsensusRuns, minAgreement: 2 },
+        runFn: () =>
           rateLimiter.execute(
             () =>
               runChatExtraction({
@@ -220,18 +223,21 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               }),
             { onWait },
           ),
-        `segment ${i} pass3c`,
-      );
-      if (pass3cAttempt.error !== null) {
-        log.warn(pass3cAttempt.error);
-        errors.push(pass3cAttempt.error);
+        onProgress: (run, total) => {
+          currentStep++;
+          onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: run < total ? 'running' : 'done', currentStep, totalSteps });
+        },
+      });
+
+      if (linkConsensusResult.runsCompleted === 0) {
+        const errMsg = `segment ${i} pass3c: all link consensus runs failed`;
+        log.warn(errMsg);
+        errors.push(errMsg);
         pass3c = null;
       } else {
-        pass3c = pass3cAttempt.result;
+        pass3c = linkConsensusResult.merged;
         pass3cRanOnce = true;
       }
-      currentStep++;
-      onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
     }
 
     // Pass 3d: Implicit signals (per segment)

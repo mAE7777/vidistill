@@ -1,5 +1,5 @@
 import { log } from '@clack/prompts';
-import type { CodeFile, CodeReconstruction, Pass2Result, CodeChange } from '../types/index.js';
+import type { CodeFile, CodeReconstruction, Pass2Result, CodeChange, ChatExtraction, ExtractedLink } from '../types/index.js';
 import { normalizeFilename } from '../lib/utils.js';
 
 export interface ConsensusConfig {
@@ -230,5 +230,120 @@ export async function runCodeConsensus(params: {
     runsAttempted: runs,
     mergedDependencies,
     mergedBuildCommands,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Link consensus
+// ---------------------------------------------------------------------------
+
+export interface LinkConsensusResult {
+  /** Merged ChatExtraction with consensus-voted links */
+  merged: ChatExtraction | null;
+  rejectedUrls: string[];
+  runsCompleted: number;
+  runsAttempted: number;
+}
+
+/**
+ * Normalize a URL for consensus matching.
+ * Strips protocol, www prefix, and trailing slash so that
+ * "https://www.example.com/" and "http://example.com" match.
+ */
+function normalizeUrl(url: string): string {
+  let u = url.toLowerCase().trim();
+  u = u.replace(/^https?:\/\//, '');
+  u = u.replace(/^www\./, '');
+  u = u.replace(/\/$/, '');
+  return u;
+}
+
+/**
+ * Run chat extraction multiple times and keep only links that appear
+ * in at least `minAgreement` runs. Filters hallucinated URLs that
+ * only appear in a single run.
+ */
+export async function runLinkConsensus(params: {
+  config: ConsensusConfig;
+  runFn: () => Promise<ChatExtraction>;
+  onProgress?: (run: number, total: number) => void;
+}): Promise<LinkConsensusResult> {
+  const { config, runFn, onProgress } = params;
+  const { runs, minAgreement } = config;
+
+  const successfulRuns: ChatExtraction[] = [];
+
+  for (let i = 0; i < runs; i++) {
+    try {
+      const result = await runFn();
+      successfulRuns.push(result);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn(`link consensus run ${i + 1}/${runs} failed: ${msg}`);
+    }
+    onProgress?.(i + 1, runs);
+  }
+
+  const runsCompleted = successfulRuns.length;
+
+  if (runsCompleted === 0) {
+    return { merged: null, rejectedUrls: [], runsCompleted: 0, runsAttempted: runs };
+  }
+
+  // Single-run shortcut
+  if (runs === 1 && runsCompleted === 1) {
+    return {
+      merged: successfulRuns[0],
+      rejectedUrls: [],
+      runsCompleted: 1,
+      runsAttempted: 1,
+    };
+  }
+
+  // Vote on links across runs by normalized URL
+  const voteMap = new Map<string, { count: number; originals: ExtractedLink[] }>();
+
+  for (const run of successfulRuns) {
+    const seenInRun = new Set<string>();
+    for (const link of run.links ?? []) {
+      const normalized = normalizeUrl(link.url);
+      if (seenInRun.has(normalized)) continue;
+      seenInRun.add(normalized);
+
+      const entry = voteMap.get(normalized);
+      if (entry == null) {
+        voteMap.set(normalized, { count: 1, originals: [link] });
+      } else {
+        entry.count++;
+        entry.originals.push(link);
+      }
+    }
+  }
+
+  const confirmedLinks: ExtractedLink[] = [];
+  const rejectedUrls: string[] = [];
+
+  for (const [, { count, originals }] of voteMap.entries()) {
+    if (count >= minAgreement) {
+      // Select the version with the longest context for best detail
+      const best = originals.reduce((a, b) =>
+        (b.context?.length ?? 0) > (a.context?.length ?? 0) ? b : a,
+      );
+      confirmedLinks.push(best);
+    } else {
+      rejectedUrls.push(originals[0].url);
+    }
+  }
+
+  // Use messages from the run with the most messages
+  const bestMessages = successfulRuns.reduce((a, b) =>
+    (b.messages?.length ?? 0) > (a.messages?.length ?? 0) ? b : a,
+  );
+
+  return {
+    merged: { messages: bestMessages.messages ?? [], links: confirmedLinks },
+    rejectedUrls,
+    runsCompleted,
+    runsAttempted: runs,
   };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runCodeConsensus } from './consensus.js';
+import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import type { ConsensusConfig } from './consensus.js';
-import type { CodeFile, CodeReconstruction, Pass2Result, CodeChange } from '../types/index.js';
+import type { CodeFile, CodeReconstruction, Pass2Result, CodeChange, ChatExtraction, ExtractedLink } from '../types/index.js';
 
 // Factory helpers
 
@@ -527,6 +527,225 @@ describe('runCodeConsensus', () => {
 
       expect(result.runsAttempted).toBe(3);
       expect(result.runsCompleted).toBe(3);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runLinkConsensus
+// ---------------------------------------------------------------------------
+
+function makeLink(overrides: Partial<ExtractedLink> = {}): ExtractedLink {
+  return {
+    url: 'https://example.com',
+    context: 'Some context',
+    timestamp: '00:00:10',
+    ...overrides,
+  };
+}
+
+function makeChatExtraction(links: ExtractedLink[], messages: ChatExtraction['messages'] = []): ChatExtraction {
+  return { messages, links };
+}
+
+function makeLinkRunFn(results: Array<ChatExtraction | Error>): () => Promise<ChatExtraction> {
+  let callIndex = 0;
+  return async () => {
+    const result = results[callIndex % results.length];
+    callIndex++;
+    if (result instanceof Error) throw result;
+    return result;
+  };
+}
+
+const LINK_CONFIG: ConsensusConfig = { runs: 3, minAgreement: 2 };
+
+describe('runLinkConsensus', () => {
+  describe('all runs agree', () => {
+    it('confirms links appearing in all 3 runs', async () => {
+      const link = makeLink({ url: 'https://example.com/page' });
+      const run = makeChatExtraction([link]);
+      const runFn = makeLinkRunFn([run, run, run]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged).not.toBeNull();
+      expect(result.merged!.links).toHaveLength(1);
+      expect(result.merged!.links[0].url).toBe('https://example.com/page');
+      expect(result.rejectedUrls).toHaveLength(0);
+    });
+  });
+
+  describe('partial agreement', () => {
+    it('confirms link appearing in 2/3 runs', async () => {
+      const link = makeLink({ url: 'https://real-link.com' });
+      const run1 = makeChatExtraction([link]);
+      const run2 = makeChatExtraction([link]);
+      const run3 = makeChatExtraction([]);
+      const runFn = makeLinkRunFn([run1, run2, run3]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links).toHaveLength(1);
+      expect(result.rejectedUrls).toHaveLength(0);
+    });
+
+    it('rejects link appearing in only 1/3 runs (hallucination)', async () => {
+      const realLink = makeLink({ url: 'https://real.com' });
+      const fakeLink = makeLink({ url: 'https://hallucinated-8a1b2b1b.com' });
+      const run1 = makeChatExtraction([realLink, fakeLink]);
+      const run2 = makeChatExtraction([realLink]);
+      const run3 = makeChatExtraction([realLink]);
+      const runFn = makeLinkRunFn([run1, run2, run3]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links).toHaveLength(1);
+      expect(result.merged!.links[0].url).toBe('https://real.com');
+      expect(result.rejectedUrls).toContain('https://hallucinated-8a1b2b1b.com');
+    });
+  });
+
+  describe('URL normalization', () => {
+    it('treats http and https as the same URL', async () => {
+      const link1 = makeLink({ url: 'http://example.com/page' });
+      const link2 = makeLink({ url: 'https://example.com/page' });
+      const link3 = makeLink({ url: 'https://example.com/page' });
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([link1]),
+        makeChatExtraction([link2]),
+        makeChatExtraction([link3]),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links).toHaveLength(1);
+    });
+
+    it('treats www and non-www as the same URL', async () => {
+      const link1 = makeLink({ url: 'https://www.example.com' });
+      const link2 = makeLink({ url: 'https://example.com' });
+      const link3 = makeLink({ url: 'http://www.example.com/' });
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([link1]),
+        makeChatExtraction([link2]),
+        makeChatExtraction([link3]),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links).toHaveLength(1);
+    });
+
+    it('strips trailing slash for matching', async () => {
+      const link1 = makeLink({ url: 'https://example.com/path/' });
+      const link2 = makeLink({ url: 'https://example.com/path' });
+      const link3 = makeLink({ url: 'https://example.com/path/' });
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([link1]),
+        makeChatExtraction([link2]),
+        makeChatExtraction([link3]),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links).toHaveLength(1);
+    });
+  });
+
+  describe('best context selection', () => {
+    it('selects the link version with the longest context', async () => {
+      const short = makeLink({ url: 'https://example.com', context: 'A link' });
+      const long = makeLink({ url: 'https://example.com', context: 'Daniel Glazer sharing a detailed FAQ about US expansion for UK founders' });
+      const medium = makeLink({ url: 'https://example.com', context: 'FAQ about US expansion' });
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([short]),
+        makeChatExtraction([long]),
+        makeChatExtraction([medium]),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.links[0].context).toBe(long.context);
+    });
+  });
+
+  describe('messages handling', () => {
+    it('uses messages from the run with the most messages', async () => {
+      const link = makeLink();
+      const msg1 = { sender: 'Alice', text: 'Hello', timestamp: '00:00:01' };
+      const msg2 = { sender: 'Bob', text: 'Hi', timestamp: '00:00:02' };
+      const msg3 = { sender: 'Carol', text: 'Hey', timestamp: '00:00:03' };
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([link], [msg1]),
+        makeChatExtraction([link], [msg1, msg2, msg3]),
+        makeChatExtraction([link], [msg1, msg2]),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged!.messages).toHaveLength(3);
+    });
+  });
+
+  describe('failure handling', () => {
+    it('returns null merged when all runs fail', async () => {
+      const runFn = makeLinkRunFn([
+        new Error('API error'),
+        new Error('API error'),
+        new Error('API error'),
+      ]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.merged).toBeNull();
+      expect(result.runsCompleted).toBe(0);
+      expect(result.runsAttempted).toBe(3);
+    });
+
+    it('continues when 1 of 3 runs fails', async () => {
+      const link = makeLink({ url: 'https://real.com' });
+      const run = makeChatExtraction([link]);
+      const runFn = makeLinkRunFn([run, new Error('fail'), run]);
+
+      const result = await runLinkConsensus({ config: LINK_CONFIG, runFn });
+
+      expect(result.runsCompleted).toBe(2);
+      expect(result.merged!.links).toHaveLength(1);
+    });
+  });
+
+  describe('single-run mode', () => {
+    it('returns all links when runs=1', async () => {
+      const config: ConsensusConfig = { runs: 1, minAgreement: 1 };
+      const links = [makeLink({ url: 'https://a.com' }), makeLink({ url: 'https://b.com' })];
+      const runFn = makeLinkRunFn([makeChatExtraction(links)]);
+
+      const result = await runLinkConsensus({ config, runFn });
+
+      expect(result.merged!.links).toHaveLength(2);
+      expect(result.rejectedUrls).toHaveLength(0);
+    });
+  });
+
+  describe('onProgress callback', () => {
+    it('calls onProgress after each run', async () => {
+      const link = makeLink();
+      const runFn = makeLinkRunFn([
+        makeChatExtraction([link]),
+        makeChatExtraction([link]),
+        makeChatExtraction([link]),
+      ]);
+
+      const progressCalls: [number, number][] = [];
+      const onProgress = vi.fn((run: number, total: number) => {
+        progressCalls.push([run, total]);
+      });
+
+      await runLinkConsensus({ config: LINK_CONFIG, runFn, onProgress });
+
+      expect(onProgress).toHaveBeenCalledTimes(3);
+      expect(progressCalls).toEqual([[1, 3], [2, 3], [3, 3]]);
     });
   });
 });
