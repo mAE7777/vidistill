@@ -1,6 +1,10 @@
+import { createRequire } from 'node:module';
 import { defineCommand, runMain } from 'citty';
 import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
+
+const _require = createRequire(import.meta.url);
+const { version } = _require('../package.json') as { version: string };
 
 const DEFAULT_OUTPUT = './vidistill-output/';
 
@@ -9,6 +13,7 @@ const SUBCOMMANDS = new Set(['ask', 'search', 'extract', 'mcp', 'watch', 'rename
 const main = defineCommand({
   meta: {
     name: 'vidistill',
+    version,
     description:
       'Video Intelligence Distiller — turn video into structured notes\n\nCommands: ask, search, extract, mcp, watch, rename-speakers',
   },
