@@ -1,4 +1,4 @@
-import { text, password, confirm, isCancel, cancel } from '@clack/prompts';
+import { text, password, confirm, select, isCancel, cancel } from '@clack/prompts';
 
 function handleCancel(value: unknown): asserts value is string | boolean {
   if (isCancel(value)) {
@@ -12,7 +12,7 @@ export async function promptVideoSource(): Promise<string> {
     message: 'YouTube URL or local file path',
     placeholder: 'https://youtube.com/watch?v=...',
     validate(input) {
-      if (input.trim().length === 0) {
+      if (!input || input.trim().length === 0) {
         return 'A video source is required.';
       }
     },
@@ -37,7 +37,7 @@ export async function promptApiKey(): Promise<string> {
   const value = await password({
     message: 'Gemini API key',
     validate(input) {
-      if (input.trim().length === 0) {
+      if (!input || input.trim().length === 0) {
         return 'An API key is required.';
       }
     },
@@ -55,4 +55,20 @@ export async function promptSaveKey(): Promise<boolean> {
 
   handleCancel(value);
   return value;
+}
+
+export type ConfirmationChoice = 'start' | 'edit-video' | 'edit-context' | 'cancel';
+
+export async function promptConfirmation(): Promise<ConfirmationChoice> {
+  const value = await select({
+    message: 'Ready to process?',
+    options: [
+      { value: 'start' as const, label: 'Start processing' },
+      { value: 'edit-video' as const, label: 'Edit video source' },
+      { value: 'edit-context' as const, label: 'Edit context' },
+      { value: 'cancel' as const, label: 'Cancel' },
+    ],
+  });
+  handleCancel(value);
+  return value as ConfirmationChoice;
 }

@@ -1,6 +1,17 @@
-import { spinner, log } from '@clack/prompts';
-import pc from 'picocolors';
+import { spinner, progress } from '@clack/prompts';
 import type { ProgressStatus, PipelineResult } from '../types/index.js';
+
+export const PHASE_LABELS: Record<string, string> = {
+  pass0: 'Understanding your video...',
+  pass1: 'Extracting transcript...',
+  pass2: 'Analyzing visuals...',
+  pass3a: 'Reconstructing code...',
+  pass3b: 'Identifying participants...',
+  pass3c: 'Reading chat messages...',
+  pass3d: 'Detecting insights...',
+  synthesis: 'Synthesizing notes...',
+  output: 'Writing output files...',
+};
 
 export interface ProgressDisplay {
   update(status: ProgressStatus): void;
@@ -10,66 +21,49 @@ export interface ProgressDisplay {
 
 export function createProgressDisplay(): ProgressDisplay {
   const s = spinner();
-  s.start('Starting pipeline...');
+  s.start(PHASE_LABELS.pass0);
+
+  let progressBar: ReturnType<typeof progress> | null = null;
+  let seenTotalSteps = false;
 
   function update(status: ProgressStatus): void {
-    const segNum = status.segment + 1;
-    const total = status.totalSegments;
+    const label = PHASE_LABELS[status.phase] ?? status.phase;
 
+    // During pass0: use spinner with pass0 label
     if (status.phase === 'pass0') {
-      s.message('Analyzing video...');
-    } else if (status.phase === 'pass1') {
-      s.message(`Pass 1: Transcript (${segNum}/${total} segments)`);
-    } else if (status.phase === 'pass2') {
-      s.message(`Pass 2: Visual extraction (${segNum}/${total} segments)`);
-    } else if (status.phase === 'pass3a') {
-      if (total > 1) {
-        s.message(`Reconstructing code (run ${segNum}/${total})...`);
-      } else {
-        s.message('Reconstructing code...');
+      s.message(label);
+      return;
+    }
+
+    // First time we see totalSteps: switch from spinner to progress bar
+    if (!seenTotalSteps && status.totalSteps != null) {
+      seenTotalSteps = true;
+      s.stop('');
+      progressBar = progress({ max: status.totalSteps });
+    }
+
+    if (progressBar != null) {
+      // Only 'done' events advance the bar (retries stay 'running' and do NOT advance)
+      if (status.status === 'done' && status.currentStep != null) {
+        progressBar.advance(1, label);
       }
-    } else if (status.phase === 'pass3b') {
-      s.message('People extraction...');
-    } else if (status.phase === 'pass3c') {
-      s.message(`Chat extraction (${segNum}/${total} segments)`);
-    } else if (status.phase === 'pass3d') {
-      s.message(`Implicit signals (${segNum}/${total} segments)`);
-    } else if (status.phase === 'synthesis') {
-      s.message('Synthesizing results...');
-    } else if (status.phase === 'output') {
-      s.message('Generating output files...');
+      // 'running' events: bar stays put (no message update needed)
     } else {
-      s.message(`${status.phase} (${segNum}/${total} segments)`);
+      // Fallback: no progress bar yet, use spinner
+      if (status.status === 'done' && status.currentStep != null && status.totalSteps != null) {
+        s.message(`${label} (${status.currentStep}/${status.totalSteps})`);
+      } else {
+        s.message(label);
+      }
     }
   }
 
-  function onWait(delayMs: number): void {
-    const secs = Math.ceil(delayMs / 1000);
-    s.message(`Waiting for rate limit... (${secs}s)`);
+  function onWait(_delayMs: number): void {
+    // No-op — rate limit pauses are invisible to the user
   }
 
-  function complete(result: PipelineResult, elapsedMs: number): void {
-    const elapsedSecs = Math.round(elapsedMs / 1000);
-    const mins = Math.floor(elapsedSecs / 60);
-    const secs = elapsedSecs % 60;
-    const elapsed = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-
-    const errorCount = result.errors.length;
-    if (errorCount > 0) {
-      s.stop(pc.yellow('Pipeline complete (with errors)'));
-    } else {
-      s.stop(pc.green('Pipeline complete'));
-    }
-
-    log.info(`Segments processed: ${pc.cyan(String(result.segments.length))}`);
-    log.info(`Passes run: ${pc.cyan(result.passesRun.join(', '))}`);
-    log.info(`Time elapsed: ${pc.cyan(elapsed)}`);
-
-    if (errorCount > 0) {
-      log.warn(`Errors: ${pc.yellow(String(errorCount))}`);
-    } else {
-      log.success('All segments completed successfully');
-    }
+  function complete(_result: PipelineResult, _elapsedMs: number): void {
+    // No verbose output — distill.ts handles completion display
   }
 
   return { update, onWait, complete };

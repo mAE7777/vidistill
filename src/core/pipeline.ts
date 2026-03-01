@@ -99,9 +99,6 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
   onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
 
-  log.info(`Video type: ${videoProfile.type}`);
-  log.info(`Strategy: ${strategy.passes.join(' → ')}`);
-
   // Build segment plan from strategy
   const plan = createSegmentPlan(duration, {
     segmentMinutes: strategy.segmentMinutes,
@@ -112,6 +109,18 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
   const results: SegmentResult[] = [];
   const n = segments.length;
+
+  // Calculate total steps for progress tracking
+  const callsPerSegment =
+    2 +
+    (strategy.passes.includes('chat') ? 1 : 0) +
+    (strategy.passes.includes('implicit') ? 1 : 0);
+  const postSegmentCalls =
+    (strategy.passes.includes('people') ? 1 : 0) +
+    (strategy.passes.includes('code') ? 3 : 0) +
+    (strategy.passes.includes('synthesis') ? 1 : 0);
+  const totalSteps = n * callsPerSegment + postSegmentCalls;
+  let currentStep = 0;
 
   let pass1RanOnce = false;
   let pass2RanOnce = false;
@@ -132,7 +141,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     const segment = segments[i];
 
     // Pass 1: Transcript
-    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'running' });
+    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'running', totalSteps });
 
     let pass1: Pass1Result | null = null;
     const pass1Attempt = await withRetry(
@@ -148,10 +157,11 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       pass1RanOnce = true;
     }
 
-    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'done' });
+    currentStep++;
+    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
 
     // Pass 2: Visual
-    onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'running' });
+    onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'running', totalSteps });
 
     let pass2: Pass2Result | null = null;
     const pass2Attempt = await withRetry(
@@ -180,12 +190,13 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       pass2RanOnce = true;
     }
 
-    onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'done' });
+    currentStep++;
+    onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
 
     // Pass 3c: Chat extraction (per segment)
     let pass3c: ChatExtraction | null | undefined;
     if (strategy.passes.includes('chat')) {
-      onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'running' });
+      onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'running', totalSteps });
       const pass3cAttempt = await withRetry(
         () =>
           rateLimiter.execute(
@@ -211,13 +222,14 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         pass3c = pass3cAttempt.result;
         pass3cRanOnce = true;
       }
-      onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'done' });
+      currentStep++;
+      onProgress?.({ phase: 'pass3c', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
     }
 
     // Pass 3d: Implicit signals (per segment)
     let pass3d: ImplicitSignals | null | undefined;
     if (strategy.passes.includes('implicit')) {
-      onProgress?.({ phase: 'pass3d', segment: i, totalSegments: n, status: 'running' });
+      onProgress?.({ phase: 'pass3d', segment: i, totalSegments: n, status: 'running', totalSteps });
       const pass3dAttempt = await withRetry(
         () =>
           rateLimiter.execute(
@@ -244,7 +256,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         pass3d = pass3dAttempt.result;
         pass3dRanOnce = true;
       }
-      onProgress?.({ phase: 'pass3d', segment: i, totalSegments: n, status: 'done' });
+      currentStep++;
+      onProgress?.({ phase: 'pass3d', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
     }
 
     results.push({ index: segment.index, pass1, pass2, pass3c, pass3d });
@@ -282,7 +295,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   // Pass 3b: People extraction (once, whole video)
   let peopleExtraction: PeopleExtraction | null = null;
   if (strategy.passes.includes('people')) {
-    onProgress?.({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running' });
+    onProgress?.({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running', totalSteps });
     const pass3bAttempt = await withRetry(
       () =>
         rateLimiter.execute(
@@ -304,7 +317,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     } else {
       peopleExtraction = pass3bAttempt.result;
     }
-    onProgress?.({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done' });
+    currentStep++;
+    onProgress?.({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done', currentStep, totalSteps });
     if (peopleExtraction !== null) passesRun.push('pass3b');
   }
 
@@ -333,11 +347,14 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         ),
       pass2Results,
       onProgress: (run, total) => {
-        onProgress?.({ phase: 'pass3a', segment: run - 1, totalSegments: total, status: 'running' });
+        // onProgress fires after each run completes (run = 1-based index of completed run)
+        onProgress?.({ phase: 'pass3a', segment: run - 1, totalSegments: total, status: 'running', totalSteps });
+        currentStep++;
+        onProgress?.({ phase: 'pass3a', segment: run - 1, totalSegments: total, status: 'done', currentStep, totalSteps });
       },
     });
 
-    onProgress?.({ phase: 'pass3a', segment: consensusConfig.runs - 1, totalSegments: consensusConfig.runs, status: 'done' });
+    // Suppress the old single done event (already emitted per-run above)
 
     if (consensusResult.runsCompleted === 0) {
       const errMsg = 'pass3a: all consensus runs failed';
@@ -360,7 +377,6 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         uncertainCodeFiles = validationResult.uncertain.map(f => f.filename);
       }
 
-      log.info(`Code: ${validationResult.confirmed.length} confirmed, ${validationResult.uncertain.length} uncertain, ${validationResult.rejected.length} rejected`);
     }
 
     if (codeReconstruction !== null) passesRun.push('pass3a');
@@ -369,7 +385,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   // Synthesis (last)
   let synthesisResult: SynthesisResult | undefined;
   if (strategy.passes.includes('synthesis')) {
-    onProgress?.({ phase: 'synthesis', segment: 0, totalSegments: 1, status: 'running' });
+    onProgress?.({ phase: 'synthesis', segment: 0, totalSegments: 1, status: 'running', totalSteps });
     const synthAttempt = await withRetry(
       () =>
         rateLimiter.execute(
@@ -393,7 +409,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     } else {
       synthesisResult = synthAttempt.result ?? undefined;
     }
-    onProgress?.({ phase: 'synthesis', segment: 0, totalSegments: 1, status: 'done' });
+    currentStep++;
+    onProgress?.({ phase: 'synthesis', segment: 0, totalSegments: 1, status: 'done', currentStep, totalSteps });
     if (synthesisResult !== undefined) passesRun.push('synthesis');
   }
 

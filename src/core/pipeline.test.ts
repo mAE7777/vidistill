@@ -438,19 +438,21 @@ describe('runPipeline', () => {
     expect(progressCalls[0]).toEqual({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'running' });
     expect(progressCalls[1]).toEqual({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
 
+    const totalSteps = 6; // 3 segments × 2 passes
+
     // Segment 0 starts at index 2
-    expect(progressCalls[2]).toEqual({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running' });
-    expect(progressCalls[3]).toEqual({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'done' });
-    expect(progressCalls[4]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'running' });
-    expect(progressCalls[5]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'done' });
+    expect(progressCalls[2]).toEqual({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[3]).toEqual({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'done', currentStep: 1, totalSteps });
+    expect(progressCalls[4]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[5]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'done', currentStep: 2, totalSteps });
 
     // Segment 1
-    expect(progressCalls[6]).toEqual({ phase: 'pass1', segment: 1, totalSegments: 3, status: 'running' });
-    expect(progressCalls[7]).toEqual({ phase: 'pass1', segment: 1, totalSegments: 3, status: 'done' });
+    expect(progressCalls[6]).toEqual({ phase: 'pass1', segment: 1, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[7]).toEqual({ phase: 'pass1', segment: 1, totalSegments: 3, status: 'done', currentStep: 3, totalSteps });
 
     // Segment 2
-    expect(progressCalls[10]).toEqual({ phase: 'pass1', segment: 2, totalSegments: 3, status: 'running' });
-    expect(progressCalls[13]).toEqual({ phase: 'pass2', segment: 2, totalSegments: 3, status: 'done' });
+    expect(progressCalls[10]).toEqual({ phase: 'pass1', segment: 2, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[13]).toEqual({ phase: 'pass2', segment: 2, totalSegments: 3, status: 'done', currentStep: 6, totalSteps });
   });
 
   it('passesRun contains only pass1 and pass2 when strategy has no specialist passes', async () => {
@@ -961,12 +963,14 @@ describe('runPipeline', () => {
     await promise;
 
     const pass3aEvents = progressCalls.filter(p => p.phase === 'pass3a');
-    // 3 running events (one per consensus run) + 1 done event
-    expect(pass3aEvents).toHaveLength(4);
-    expect(pass3aEvents[0]).toEqual({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'running' });
-    expect(pass3aEvents[1]).toEqual({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'running' });
-    expect(pass3aEvents[2]).toEqual({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'running' });
-    expect(pass3aEvents[3]).toEqual({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'done' });
+    // 3 pairs of (running + done) events, one per consensus run = 6 events total
+    expect(pass3aEvents).toHaveLength(6);
+    expect(pass3aEvents[0]).toMatchObject({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'running' });
+    expect(pass3aEvents[1]).toMatchObject({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'done' });
+    expect(pass3aEvents[2]).toMatchObject({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'running' });
+    expect(pass3aEvents[3]).toMatchObject({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'done' });
+    expect(pass3aEvents[4]).toMatchObject({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'running' });
+    expect(pass3aEvents[5]).toMatchObject({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'done' });
   });
 
   it('progress events emitted for pass3b once', async () => {
@@ -992,8 +996,8 @@ describe('runPipeline', () => {
 
     const pass3bEvents = progressCalls.filter(p => p.phase === 'pass3b');
     expect(pass3bEvents).toHaveLength(2); // running + done
-    expect(pass3bEvents[0]).toEqual({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running' });
-    expect(pass3bEvents[1]).toEqual({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done' });
+    expect(pass3bEvents[0]).toMatchObject({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running' });
+    expect(pass3bEvents[1]).toMatchObject({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done' });
   });
 
   it('synthesis uses MODELS.pro and does not pass fileUri/mimeType', async () => {
@@ -1106,7 +1110,7 @@ describe('runPipeline', () => {
     expect(result.interrupted).toContain('pass3a');
   });
 
-  it('summary log line Code: X confirmed, Y uncertain, Z rejected', async () => {
+  it('does not log code validation summary (hidden from user output)', async () => {
     for (let i = 0; i < 3; i++) {
       mockRunTranscript.mockResolvedValueOnce(makePass1(i));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
@@ -1150,8 +1154,7 @@ describe('runPipeline', () => {
     const summaryCall = logInfoSpy.mock.calls.find(call =>
       typeof call[0] === 'string' && call[0].startsWith('Code:')
     );
-    expect(summaryCall).toBeDefined();
-    expect(summaryCall?.[0]).toBe('Code: 1 confirmed, 1 uncertain, 1 rejected');
+    expect(summaryCall).toBeUndefined();
 
     logInfoSpy.mockRestore();
   });

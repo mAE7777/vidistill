@@ -217,6 +217,8 @@ export interface ProgressStatus {
   segment: number;
   totalSegments: number;
   status: string;
+  currentStep?: number;
+  totalSteps?: number;
 }
 
 export interface SegmentResult {

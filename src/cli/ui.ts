@@ -1,6 +1,6 @@
 import figlet from 'figlet';
 import pc from 'picocolors';
-import { intro, log } from '@clack/prompts';
+import { intro, note } from '@clack/prompts';
 
 export function showLogo(): void {
   const ascii = figlet.textSync('VIDISTILL', { font: 'Big' });
@@ -11,15 +11,15 @@ export function showIntro(): void {
   intro(pc.dim('video intelligence distiller'));
 }
 
-export function showConfig(config: {
+export function showConfigBox(config: {
   input: string;
   context: string | undefined;
   output: string;
 }): void {
   const lines = [
-    `  input   ${pc.cyan(config.input)}`,
-    `  context ${config.context ? pc.white(config.context) : pc.dim('(none)')}`,
-    `  output  ${pc.white(config.output)}`,
+    `Video:   ${config.input}`,
+    `Context: ${config.context ?? '(none)'}`,
+    `Output:  ${config.output}`,
   ];
-  log.message(lines.join('\n'), { symbol: pc.green('»') });
+  note(lines.join('\n'), 'Configuration');
 }

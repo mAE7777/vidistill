@@ -89,7 +89,7 @@ describe('createShutdownHandler', () => {
     expect(() => handler.deregister()).not.toThrow();
   });
 
-  it('SIGINT sets isShuttingDown to true and logs warning', async () => {
+  it('SIGINT sets isShuttingDown to true and logs "Interrupted" when no progress set', async () => {
     const { log } = await import('@clack/prompts');
     const warnSpy = vi.spyOn(log, 'warn');
 
@@ -115,7 +115,78 @@ describe('createShutdownHandler', () => {
     capturedHandler!();
 
     expect(handler.isShuttingDown()).toBe(true);
-    expect(warnSpy).toHaveBeenCalledWith('Interrupted. Saving partial results...');
+    expect(warnSpy).toHaveBeenCalledWith('Interrupted');
+
+    await vi.waitFor(() => {
+      expect(exitSpy).toHaveBeenCalledWith(130);
+    }, { timeout: 1000 });
+  });
+
+  it('setProgress() method exists on ShutdownHandler', () => {
+    const handler = createShutdownHandler(makeParams());
+    expect(typeof handler.setProgress).toBe('function');
+  });
+
+  it('SIGINT shows step count and resume hint after setProgress is called', async () => {
+    const { log } = await import('@clack/prompts');
+    const warnSpy = vi.spyOn(log, 'warn');
+    const infoSpy = vi.spyOn(log, 'info');
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    vi.spyOn(process, 'once').mockImplementation(() => process);
+
+    const params = makeParams({ uploadedFileNames: [], source: '/tmp/test.mp4', outputDir: '/tmp/test-output' });
+    const handler = createShutdownHandler(params);
+
+    let capturedHandler: (() => void) | undefined;
+    vi.spyOn(process, 'on').mockImplementation(
+      (event: string | symbol, fn: (...args: unknown[]) => void) => {
+        if (event === 'SIGINT') capturedHandler = fn as () => void;
+        return process;
+      },
+    );
+
+    handler.register();
+    handler.setProgress(5, 12);
+    capturedHandler!();
+
+    expect(warnSpy).toHaveBeenCalledWith('Interrupted — progress saved (5/12 steps)');
+    expect(infoSpy).toHaveBeenCalledWith('Resume: vidistill /tmp/test.mp4 -o /tmp/test-output/');
+
+    await vi.waitFor(() => {
+      expect(exitSpy).toHaveBeenCalledWith(130);
+    }, { timeout: 1000 });
+  });
+
+  it('SIGINT shows only "Interrupted" when setProgress not called (pass0 scenario)', async () => {
+    const { log } = await import('@clack/prompts');
+    const warnSpy = vi.spyOn(log, 'warn');
+    const infoSpy = vi.spyOn(log, 'info');
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    vi.spyOn(process, 'once').mockImplementation(() => process);
+
+    const params = makeParams({ uploadedFileNames: [] });
+    const handler = createShutdownHandler(params);
+
+    let capturedHandler: (() => void) | undefined;
+    vi.spyOn(process, 'on').mockImplementation(
+      (event: string | symbol, fn: (...args: unknown[]) => void) => {
+        if (event === 'SIGINT') capturedHandler = fn as () => void;
+        return process;
+      },
+    );
+
+    handler.register();
+    // do NOT call setProgress — simulating interruption during pass0
+    capturedHandler!();
+
+    expect(warnSpy).toHaveBeenCalledWith('Interrupted');
+    expect(infoSpy).not.toHaveBeenCalledWith(expect.stringContaining('Resume:'));
 
     await vi.waitFor(() => {
       expect(exitSpy).toHaveBeenCalledWith(130);

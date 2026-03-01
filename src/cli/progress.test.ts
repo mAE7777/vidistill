@@ -3,11 +3,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockSpinner = {
   start: vi.fn(),
   stop: vi.fn(),
+  error: vi.fn(),
+  message: vi.fn(),
+};
+
+const mockProgressBar = {
+  advance: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
   message: vi.fn(),
 };
 
 vi.mock('@clack/prompts', () => ({
   spinner: vi.fn(() => mockSpinner),
+  progress: vi.fn(() => mockProgressBar),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -23,114 +32,135 @@ vi.mock('picocolors', () => ({
   },
 }));
 
-import { log } from '@clack/prompts';
-import { createProgressDisplay } from './progress.js';
+import { progress, log } from '@clack/prompts';
+import { createProgressDisplay, PHASE_LABELS } from './progress.js';
+
+describe('PHASE_LABELS', () => {
+  it('has correct label for pass0', () => {
+    expect(PHASE_LABELS.pass0).toBe('Understanding your video...');
+  });
+
+  it('has correct label for pass1', () => {
+    expect(PHASE_LABELS.pass1).toBe('Extracting transcript...');
+  });
+
+  it('has correct label for pass2', () => {
+    expect(PHASE_LABELS.pass2).toBe('Analyzing visuals...');
+  });
+
+  it('has correct label for pass3a', () => {
+    expect(PHASE_LABELS.pass3a).toBe('Reconstructing code...');
+  });
+
+  it('has correct label for pass3b', () => {
+    expect(PHASE_LABELS.pass3b).toBe('Identifying participants...');
+  });
+
+  it('has correct label for pass3c', () => {
+    expect(PHASE_LABELS.pass3c).toBe('Reading chat messages...');
+  });
+
+  it('has correct label for pass3d', () => {
+    expect(PHASE_LABELS.pass3d).toBe('Detecting insights...');
+  });
+
+  it('has correct label for synthesis', () => {
+    expect(PHASE_LABELS.synthesis).toBe('Synthesizing notes...');
+  });
+
+  it('has correct label for output', () => {
+    expect(PHASE_LABELS.output).toBe('Writing output files...');
+  });
+});
 
 describe('createProgressDisplay', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('starts spinner immediately on creation', () => {
+  it('starts spinner with pass0 label on creation', () => {
     createProgressDisplay();
-    expect(mockSpinner.start).toHaveBeenCalledWith('Starting pipeline...');
+    expect(mockSpinner.start).toHaveBeenCalledWith('Understanding your video...');
   });
 
-  it('update() shows pass1 message', () => {
-    const display = createProgressDisplay();
-    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Pass 1: Transcript (1/3 segments)');
-  });
-
-  it('update() shows pass2 message', () => {
-    const display = createProgressDisplay();
-    display.update({ phase: 'pass2', segment: 2, totalSegments: 5, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Pass 2: Visual extraction (3/5 segments)');
-  });
-
-  it('update() shows "Analyzing video..." for pass0 phase', () => {
+  it('update() with pass0 phase shows spinner message', () => {
     const display = createProgressDisplay();
     display.update({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Analyzing video...');
+    expect(mockSpinner.message).toHaveBeenCalledWith('Understanding your video...');
   });
 
-  it('update() shows pass3a consensus run message when totalSegments > 1', () => {
+  it('update() with pass0 done does not switch to progress bar', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3a', segment: 0, totalSegments: 3, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 1/3)...');
+    display.update({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done', currentStep: 0, totalSteps: 10 });
+    expect(progress).not.toHaveBeenCalled();
+    expect(mockSpinner.message).toHaveBeenCalledWith('Understanding your video...');
   });
 
-  it('update() shows pass3a run 2/3 message', () => {
+  it('switches from spinner to progress bar when totalSteps first appears (non-pass0)', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3a', segment: 1, totalSegments: 3, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 2/3)...');
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    expect(mockSpinner.stop).toHaveBeenCalledWith('');
+    expect(progress).toHaveBeenCalledWith({ max: 10 });
   });
 
-  it('update() shows pass3a run 3/3 message', () => {
+  it('does not create progress bar twice', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3a', segment: 2, totalSegments: 3, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code (run 3/3)...');
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'done', currentStep: 1, totalSteps: 10 });
+    expect(progress).toHaveBeenCalledTimes(1);
   });
 
-  it('update() shows simple pass3a message when totalSegments is 1', () => {
+  it('advance() is called on progress bar when status is done', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3a', segment: 0, totalSegments: 1, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Reconstructing code...');
+    // First update triggers bar creation
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    // Done event advances bar
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'done', currentStep: 1, totalSteps: 10 });
+    expect(mockProgressBar.advance).toHaveBeenCalledWith(1, 'Extracting transcript...');
   });
 
-  it('update() shows pass3b message without segment count', () => {
+  it('advance() is NOT called when status is running (retry protection)', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('People extraction...');
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
+    expect(mockProgressBar.advance).not.toHaveBeenCalled();
   });
 
-  it('update() shows pass3c message with segment count', () => {
+  it('advance() uses correct phase label for pass3b', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3c', segment: 1, totalSegments: 4, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Chat extraction (2/4 segments)');
+    display.update({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'running', totalSteps: 5 });
+    display.update({ phase: 'pass3b', segment: 0, totalSegments: 1, status: 'done', currentStep: 1, totalSteps: 5 });
+    expect(mockProgressBar.advance).toHaveBeenCalledWith(1, 'Identifying participants...');
   });
 
-  it('update() shows pass3d message with segment count', () => {
+  it('advance() uses fallback label for unknown phase', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'pass3d', segment: 0, totalSegments: 2, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Implicit signals (1/2 segments)');
+    display.update({ phase: 'unknown', segment: 0, totalSegments: 1, status: 'running', totalSteps: 5 });
+    display.update({ phase: 'unknown', segment: 0, totalSegments: 1, status: 'done', currentStep: 1, totalSteps: 5 });
+    expect(mockProgressBar.advance).toHaveBeenCalledWith(1, 'unknown');
   });
 
-  it('update() shows synthesis message without segment count', () => {
+  it('onWait() is a no-op — does not call spinner message', () => {
     const display = createProgressDisplay();
-    display.update({ phase: 'synthesis', segment: 0, totalSegments: 1, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('Synthesizing results...');
+    display.onWait(3000);
+    expect(mockSpinner.message).not.toHaveBeenCalled();
   });
 
-  it('update() shows generic message for unknown phase', () => {
-    const display = createProgressDisplay();
-    display.update({ phase: 'unknown', segment: 0, totalSegments: 1, status: 'running' });
-    expect(mockSpinner.message).toHaveBeenCalledWith('unknown (1/1 segments)');
-  });
-
-  it('onWait() shows rate limit message with ceiling seconds', () => {
-    const display = createProgressDisplay();
-    display.onWait(1500);
-    expect(mockSpinner.message).toHaveBeenCalledWith('Waiting for rate limit... (2s)');
-  });
-
-  it('complete() stops spinner with success when no errors', () => {
+  it('complete() is a no-op — does not call spinner or log', () => {
     const display = createProgressDisplay();
     display.complete({ segments: [{ index: 0, pass1: null, pass2: null }], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
-    expect(log.success as ReturnType<typeof vi.fn>).toHaveBeenCalledWith('All segments completed successfully');
+    expect(mockSpinner.stop).not.toHaveBeenCalled();
+    expect(mockSpinner.error).not.toHaveBeenCalled();
+    expect(log.success as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(log.info as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
+    expect(log.warn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 
-  it('complete() stops spinner with warning when errors exist', () => {
+  it('complete() is a no-op even when errors exist', () => {
     const display = createProgressDisplay();
     display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: ['some error'] }, 5000);
-    expect(log.warn as ReturnType<typeof vi.fn>).toHaveBeenCalledWith('Errors: 1');
-  });
-
-  it('complete() shows elapsed time in minutes when > 60s', () => {
-    const display = createProgressDisplay();
-    display.complete({ segments: [], passesRun: ['pass1'], errors: [] }, 125000);
-    const infoCalls = (log.info as ReturnType<typeof vi.fn>).mock.calls.map((c: unknown[]) => c[0]) as string[];
-    const timeCall = infoCalls.find((c) => c.includes('Time elapsed'));
-    expect(timeCall).toContain('2m 5s');
+    expect(mockSpinner.stop).not.toHaveBeenCalled();
+    expect(mockSpinner.error).not.toHaveBeenCalled();
+    expect(log.warn as ReturnType<typeof vi.fn>).not.toHaveBeenCalled();
   });
 });

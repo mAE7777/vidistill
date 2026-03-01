@@ -1,6 +1,6 @@
 import type { VideoProfile, PassStrategy } from '../types/index.js';
 
-const BASE_PASSES = ['transcript', 'visual', 'synthesis'];
+const BASE_PASSES = ['transcript', 'visual'];
 
 export function determineStrategy(profile: VideoProfile): PassStrategy {
   const passes = new Set<string>(BASE_PASSES);
@@ -49,6 +49,8 @@ export function determineStrategy(profile: VideoProfile): PassStrategy {
     complexity === 'complex' && recommendations.segmentMinutes > 8
       ? 8
       : recommendations.segmentMinutes;
+
+  passes.add('synthesis');
 
   return {
     passes: Array.from(passes),

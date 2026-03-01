@@ -15,6 +15,7 @@ export interface ShutdownHandler {
   isShuttingDown(): boolean;
   register(): void;
   deregister(): void;
+  setProgress(currentStep: number, totalSteps: number): void;
 }
 
 export function createShutdownHandler(params: ShutdownParams): ShutdownHandler {
@@ -22,6 +23,11 @@ export function createShutdownHandler(params: ShutdownParams): ShutdownHandler {
 
   let shuttingDown = false;
   let handler: (() => void) | null = null;
+  let forceHandler: (() => void) | null = null;
+
+  let progressCurrentStep = 0;
+  let progressTotalSteps = 0;
+  let hasProgress = false;
 
   const sigintHandler = (): void => {
     if (shuttingDown) {
@@ -31,12 +37,19 @@ export function createShutdownHandler(params: ShutdownParams): ShutdownHandler {
     }
 
     shuttingDown = true;
-    log.warn('Interrupted. Saving partial results...');
+
+    if (hasProgress) {
+      log.warn(`Interrupted — progress saved (${progressCurrentStep}/${progressTotalSteps} steps)`);
+      log.info(`Resume: vidistill ${params.source} -o ${params.outputDir}/`);
+    } else {
+      log.warn('Interrupted');
+    }
 
     // Register force-exit handler for second SIGINT
     const forceExitHandler = (): void => {
       process.exit(1);
     };
+    forceHandler = forceExitHandler;
     process.once('SIGINT', forceExitHandler);
 
     // Best-effort cleanup of uploaded Gemini files
@@ -74,6 +87,16 @@ export function createShutdownHandler(params: ShutdownParams): ShutdownHandler {
         process.removeListener('SIGINT', handler);
         handler = null;
       }
+      if (forceHandler !== null) {
+        process.removeListener('SIGINT', forceHandler);
+        forceHandler = null;
+      }
+    },
+
+    setProgress(currentStep: number, totalSteps: number): void {
+      progressCurrentStep = currentStep;
+      progressTotalSteps = totalSteps;
+      hasProgress = true;
     },
   };
 }
