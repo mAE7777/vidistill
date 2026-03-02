@@ -1,11 +1,4 @@
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { unlink } from 'fs/promises';
-import { YtDlp } from 'ytdlp-nodejs';
-import { log } from '@clack/prompts';
-import pc from 'picocolors';
 import type { GeminiClient } from '../gemini/client.js';
-import { MODELS } from '../gemini/models.js';
 
 const YOUTUBE_PATTERNS = [
   /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
@@ -62,61 +55,7 @@ export interface YouTubeResult {
   uploadedFileName?: string;
 }
 
-export async function handleYouTube(url: string, client: GeminiClient): Promise<YouTubeResult> {
-  // Attempt direct Gemini URL processing first
-  try {
-    await client.generate({
-      model: MODELS.flash,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { fileData: { fileUri: url, mimeType: 'video/mp4' } },
-            { text: 'ok' },
-          ],
-        },
-      ],
-      config: {},
-    });
-    return { fileUri: url, mimeType: 'video/mp4', source: 'direct' };
-  } catch (err) {
-    log.warn(pc.dim('Direct Gemini probe failed. Falling back to yt-dlp.'));
-  }
-
-  const tempPath = await downloadWithYtDlp(url);
-  try {
-    const uploaded = await client.uploadFile(tempPath);
-    return {
-      fileUri: uploaded.uri,
-      mimeType: uploaded.mimeType,
-      source: 'ytdlp',
-      duration: uploaded.duration,
-      uploadedFileName: uploaded.name,
-    };
-  } finally {
-    await unlink(tempPath).catch(() => undefined);
-  }
-}
-
-export async function downloadWithYtDlp(url: string): Promise<string> {
-  const ytdlp = new YtDlp();
-
-  const installed = ytdlp.checkInstallation();
-  if (!installed) {
-    throw new Error('yt-dlp is required for private videos. Install: brew install yt-dlp');
-  }
-
-  const videoId = extractVideoId(url) ?? 'video';
-  const outputPath = join(tmpdir(), `vidistill-${videoId}-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
-
-  await ytdlp.downloadAsync(url, {
-    output: outputPath,
-    format: {
-      filter: 'videoonly',
-      quality: '720p',
-      type: 'mp4',
-    },
-  });
-
-  return outputPath;
+export async function handleYouTube(url: string, _client: GeminiClient): Promise<YouTubeResult> {
+  // Gemini accepts public YouTube URLs directly as fileUri (no upload needed)
+  return { fileUri: url, mimeType: 'video/mp4', source: 'direct' };
 }
