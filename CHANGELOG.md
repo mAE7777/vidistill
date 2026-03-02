@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0] - 2026-03-02
+
+### Added
+- Pipeline resume — interrupted runs save progress after each pass; re-running the same output directory offers to resume from where it left off
+- Interactive HTML timeline — color-coded lanes for speech, code, visuals, and key moments with dark mode support
+- Prerequisites output — extracts knowledge prerequisites from synthesis, grouped by knowledge level (beginner, intermediate, advanced)
+- Link consensus voting — chat extraction runs 3x per segment, keeps only links appearing in 2+ runs to filter hallucinated URLs
+
+### Changed
+- Version access uses build-time injection (`VIDISTILL_VERSION`) instead of runtime `createRequire` file resolution
+
+### Removed
+- `extract` command — bypassed quality layers (synthesis, deduplication, consensus) and exposed LLM non-determinism across extraction methods
+
+### Fixed
+- CLI binary crash on startup — `createRequire` resolved relative path from wrong location after tsup bundling
+- `parseSemver` NaN bug causing false version mismatch warnings on resume
+- Pipeline strategy not tracked in progress file during fresh runs
+- Unsafe type casts on preloaded results replaced with runtime object validation
+- Progress file validation rejects malformed schema version, vidistill version, and completed passes fields
+- Version access in CLI entry point eliminated last fragile relative-path package.json read
+
 ## [0.2.5] - 2026-03-01
 
 ### Fixed
