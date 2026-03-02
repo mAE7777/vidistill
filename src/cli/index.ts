@@ -1,10 +1,7 @@
 import { defineCommand, runMain } from 'citty';
 import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
-import { run as runAsk } from '../commands/ask.js';
-import { run as runSearch } from '../commands/search.js';
 import { run as runMcp } from '../commands/mcp.js';
-import { run as runWatch } from '../commands/watch.js';
 import { run as runRenameSpeakers } from '../commands/rename-speakers.js';
 
 declare const VIDISTILL_VERSION: string;
@@ -13,10 +10,7 @@ const version = VIDISTILL_VERSION;
 const DEFAULT_OUTPUT = './vidistill-output/';
 
 const SUBCOMMANDS: Record<string, (args: string[]) => Promise<void>> = {
-  ask: runAsk,
-  search: runSearch,
   mcp: runMcp,
-  watch: runWatch,
   'rename-speakers': runRenameSpeakers,
 };
 

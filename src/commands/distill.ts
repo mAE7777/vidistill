@@ -434,8 +434,6 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     pipelineResult.peopleExtraction.participants.length > 1
   ) {
     log.info(pc.dim('Tip: vidistill rename-speakers <dir> to assign real names'));
-  } else {
-    log.info(pc.dim('Tip: vidistill ask <dir> "your question" to query this video'));
   }
 
   if (outputResult.errors.length > 0) {

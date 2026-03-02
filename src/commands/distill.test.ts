@@ -210,15 +210,6 @@ describe('runDistill', () => {
       expect(infoCalls.some((c: string) => c.includes('rename-speakers'))).toBe(true);
     });
 
-    it('shows ask tip as default', async () => {
-      mockRunPipeline.mockResolvedValue(basePipelineResult());
-
-      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
-
-      const infoCalls = (mockLog.info.mock.calls as string[][]).map(c => c[0]);
-      expect(infoCalls.some((c: string) => c.includes('vidistill ask'))).toBe(true);
-    });
-
     it('prefers code tip over speakers tip', async () => {
       mockRunPipeline.mockResolvedValue(basePipelineResult({
         codeReconstruction: { files: [], dependencies_mentioned: [], build_commands: [] },
