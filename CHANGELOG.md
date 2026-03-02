@@ -3,6 +3,8 @@
 ## [0.3.0] - 2026-03-02
 
 ### Added
+- Speaker naming — post-pipeline prompt assigns real names to detected SPEAKER_XX labels, re-renders all affected output files
+- `rename-speakers` command — standalone command to re-name speakers on existing output directories
 - Pipeline resume — interrupted runs save progress after each pass; re-running the same output directory offers to resume from where it left off
 - Interactive HTML timeline — color-coded lanes for speech, code, visuals, and key moments with dark mode support
 - Prerequisites output — extracts knowledge prerequisites from synthesis, grouped by knowledge level (beginner, intermediate, advanced)
@@ -13,14 +15,17 @@
 
 ### Removed
 - `extract` command — bypassed quality layers (synthesis, deduplication, consensus) and exposed LLM non-determinism across extraction methods
+- Unused placeholder subcommands (ask, search, watch)
 
 ### Fixed
+- Speaker names now applied consistently across all output files including combined.md
+- YouTube URLs sent directly to Gemini instead of always falling back to yt-dlp
 - CLI binary crash on startup — `createRequire` resolved relative path from wrong location after tsup bundling
 - `parseSemver` NaN bug causing false version mismatch warnings on resume
 - Pipeline strategy not tracked in progress file during fresh runs
-- Unsafe type casts on preloaded results replaced with runtime object validation
+- Unsafe type casts on preloaded results and JSON reads replaced with runtime object validation
 - Progress file validation rejects malformed schema version, vidistill version, and completed passes fields
-- Version access in CLI entry point eliminated last fragile relative-path package.json read
+- Duplicate `readJsonFile` implementations consolidated into shared utility
 
 ## [0.2.5] - 2026-03-01
 
