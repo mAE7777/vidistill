@@ -50,6 +50,23 @@ export function applySpeakerMapping(label: string, mapping?: Record<string, stri
   return mapping?.[label] ?? label;
 }
 
+import { readFile } from 'fs/promises';
+
+/**
+ * Read a JSON file from disk, returning null on any error (missing file, corrupt JSON).
+ * Validates that the parsed result is a non-null object before returning.
+ */
+export async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed == null) return null;
+    return parsed as T;
+  } catch {
+    return null;
+  }
+}
+
 export function changeTypeBadge(changeType: string): string {
   const badges: Record<string, string> = {
     new_file: '[NEW]',

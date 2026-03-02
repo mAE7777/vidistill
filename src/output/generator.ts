@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import type {
   GenerateOutputParams,
@@ -28,6 +28,7 @@ import { writeInsights } from './insights.js';
 import { writePrereqs } from './prereqs.js';
 import { generateTimeline } from './timeline.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
+import { readJsonFile } from '../lib/utils.js';
 
 /**
  * Convert a video title into a filesystem-safe slug:
@@ -121,7 +122,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2b: combined.md — conditional
   if (filesToGenerate.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult });
+      const content = writeCombined({ pipelineResult, speakerMapping });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -297,15 +298,6 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   };
 }
 
-async function readJsonFile<T>(filePath: string): Promise<T | null> {
-  try {
-    const text = await readFile(filePath, 'utf8');
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
-}
-
 export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMappingParams): Promise<OutputResult> {
   const { outputDir, speakerMapping } = params;
 
@@ -339,24 +331,16 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   const synthesisResult = await readJsonFile<SynthesisResult>(join(rawDir, 'synthesis.json'));
   const codeReconstruction = await readJsonFile<CodeReconstruction>(join(rawDir, 'pass3a.json'));
 
-  // Discover segments by checking for pass1 files
-  const segmentIndices: number[] = [];
+  // Discover and read segments in a single pass (avoids double file reads)
+  const segments: { index: number; pass1: Pass1Result | null; pass2: Pass2Result | null; pass3c: ChatExtraction | null; pass3d: ImplicitSignals | null }[] = [];
   for (let n = 0; n < 1000; n++) {
-    const p1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
-    const p2 = await readJsonFile<Pass2Result>(join(rawDir, `pass2-seg${n}.json`));
-    if (p1 == null && p2 == null) break;
-    segmentIndices.push(n);
+    const pass1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
+    const pass2 = await readJsonFile<Pass2Result>(join(rawDir, `pass2-seg${n}.json`));
+    if (pass1 == null && pass2 == null) break;
+    const pass3c = await readJsonFile<ChatExtraction>(join(rawDir, `pass3c-seg${n}.json`));
+    const pass3d = await readJsonFile<ImplicitSignals>(join(rawDir, `pass3d-seg${n}.json`));
+    segments.push({ index: n, pass1, pass2, pass3c, pass3d });
   }
-
-  const segments = await Promise.all(
-    segmentIndices.map(async (n) => {
-      const pass1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
-      const pass2 = await readJsonFile<Pass2Result>(join(rawDir, `pass2-seg${n}.json`));
-      const pass3c = await readJsonFile<ChatExtraction>(join(rawDir, `pass3c-seg${n}.json`));
-      const pass3d = await readJsonFile<ImplicitSignals>(join(rawDir, `pass3d-seg${n}.json`));
-      return { index: n, pass1, pass2, pass3c, pass3d };
-    }),
-  );
 
   const pipelineResult: PipelineResult = {
     segments,
@@ -388,6 +372,15 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       await writeOutputFile('transcript.md', content);
     } catch (err) {
       errors.push(`transcript.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('combined.md')) {
+    try {
+      const content = writeCombined({ pipelineResult, speakerMapping });
+      await writeOutputFile('combined.md', content);
+    } catch (err) {
+      errors.push(`combined.md: ${String(err)}`);
     }
   }
 

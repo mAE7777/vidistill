@@ -136,6 +136,32 @@ describe('writeCombined', () => {
     expect(result).toContain('Creating app.ts');
   });
 
+  it('applies speakerMapping to speech entries', () => {
+    const mapping = { SPEAKER_00: 'Alice' };
+    const result = writeCombined({
+      pipelineResult: makePipelineResult([makeSegment(0, PASS1, null)]),
+      speakerMapping: mapping,
+    });
+    expect(result).toContain('Alice:');
+    expect(result).not.toContain('SPEAKER_00:');
+  });
+
+  it('leaves unmapped speakers unchanged with speakerMapping', () => {
+    const mapping = { SPEAKER_01: 'Bob' };
+    const result = writeCombined({
+      pipelineResult: makePipelineResult([makeSegment(0, PASS1, null)]),
+      speakerMapping: mapping,
+    });
+    expect(result).toContain('SPEAKER_00:');
+  });
+
+  it('works without speakerMapping (backward compatible)', () => {
+    const result = writeCombined({
+      pipelineResult: makePipelineResult([makeSegment(0, PASS1, null)]),
+    });
+    expect(result).toContain('SPEAKER_00:');
+  });
+
   it('bolds emphasis words in speech', () => {
     const pass1WithEmphasis: Pass1Result = {
       ...PASS1,

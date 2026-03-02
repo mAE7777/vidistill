@@ -1,5 +1,5 @@
 import { log, text, select, isCancel, cancel } from '@clack/prompts';
-import type { PipelineResult, SpeakerMapping, SpeakerInfo, Participant } from '../types/index.js';
+import type { PipelineResult, SpeakerMapping, Participant } from '../types/index.js';
 
 const TOP_N = 5;
 

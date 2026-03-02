@@ -1,8 +1,9 @@
-import { changeTypeBadge, parseTimestamp } from '../lib/utils.js';
-import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote } from '../types/index.js';
+import { changeTypeBadge, parseTimestamp, applySpeakerMapping } from '../lib/utils.js';
+import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote, SpeakerMapping } from '../types/index.js';
 
 export interface WriteCombinedParams {
   pipelineResult: PipelineResult;
+  speakerMapping?: SpeakerMapping;
 }
 
 type EventKind = 'speech' | 'code' | 'visual';
@@ -14,7 +15,7 @@ interface TimelineEvent {
   data: TranscriptEntry | CodeBlock | VisualNote;
 }
 
-function renderSpeechEvent(entry: TranscriptEntry): string {
+function renderSpeechEvent(entry: TranscriptEntry, speakerMapping?: SpeakerMapping): string {
   let text = entry.text;
   if (entry.emphasis_words != null && entry.emphasis_words.length > 0) {
     for (const word of entry.emphasis_words) {
@@ -23,7 +24,8 @@ function renderSpeechEvent(entry: TranscriptEntry): string {
       text = text.replace(re, `**$&**`);
     }
   }
-  return `> **[${entry.timestamp}]** ${entry.speaker}: ${text}`;
+  const speaker = applySpeakerMapping(entry.speaker, speakerMapping);
+  return `> **[${entry.timestamp}]** ${speaker}: ${text}`;
 }
 
 function renderCodeEvent(block: CodeBlock): string {
@@ -46,10 +48,10 @@ function renderVisualEvent(note: VisualNote): string {
   return `_[${note.timestamp}]_ **${note.visual_type}:** ${note.description}`;
 }
 
-function renderEvent(event: TimelineEvent): string {
+function renderEvent(event: TimelineEvent, speakerMapping?: SpeakerMapping): string {
   switch (event.kind) {
     case 'speech':
-      return renderSpeechEvent(event.data as TranscriptEntry);
+      return renderSpeechEvent(event.data as TranscriptEntry, speakerMapping);
     case 'code':
       return renderCodeEvent(event.data as CodeBlock);
     case 'visual':
@@ -58,7 +60,7 @@ function renderEvent(event: TimelineEvent): string {
 }
 
 export function writeCombined(params: WriteCombinedParams): string {
-  const { pipelineResult } = params;
+  const { pipelineResult, speakerMapping } = params;
   const { segments } = pipelineResult;
 
   const sections: string[] = ['# Combined View', '', '_Chronological interleaving of speech, code, and visuals._', ''];
@@ -103,7 +105,7 @@ export function writeCombined(params: WriteCombinedParams): string {
     });
 
     for (const event of events) {
-      sections.push(renderEvent(event));
+      sections.push(renderEvent(event, speakerMapping));
       sections.push('');
     }
   }

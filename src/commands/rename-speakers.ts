@@ -1,21 +1,9 @@
-import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { log, text, isCancel, cancel } from '@clack/prompts';
 import type { Pass1Result, PeopleExtraction, SpeakerMapping } from '../types/index.js';
 import type { MetadataOutput } from '../output/metadata.js';
 import { reRenderWithSpeakerMapping } from '../output/generator.js';
-
-/**
- * Read a JSON file from disk, returning null on any error.
- */
-async function readJson<T>(filePath: string): Promise<T | null> {
-  try {
-    const raw = await readFile(filePath, 'utf8');
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
+import { readJsonFile } from '../lib/utils.js';
 
 /**
  * Collect all unique speaker labels from pass1-seg*.json files in the raw/ directory.
@@ -27,7 +15,7 @@ async function collectSpeakersFromRaw(
   const speakerEntries = new Map<string, number>();
 
   for (let n = 0; n < 1000; n++) {
-    const pass1 = await readJson<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
+    const pass1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
     if (pass1 == null) break;
 
     for (const info of pass1.speaker_summary) {
@@ -61,7 +49,7 @@ export async function run(args: string[]): Promise<void> {
 
   // Read metadata.json
   const metadataPath = join(outputDir, 'metadata.json');
-  const metadata = await readJson<MetadataOutput>(metadataPath);
+  const metadata = await readJsonFile<MetadataOutput>(metadataPath);
 
   if (metadata == null) {
     log.error('Not a vidistill output directory');
@@ -70,7 +58,7 @@ export async function run(args: string[]): Promise<void> {
 
   // Check for people extraction data
   const rawDir = join(outputDir, 'raw');
-  const peopleExtraction = await readJson<PeopleExtraction>(join(rawDir, 'pass3b-people.json'));
+  const peopleExtraction = await readJsonFile<PeopleExtraction>(join(rawDir, 'pass3b-people.json'));
 
   if (peopleExtraction == null) {
     log.info('No speakers detected in this video');
