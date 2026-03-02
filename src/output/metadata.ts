@@ -17,6 +17,7 @@ export interface MetadataOutput {
   errors: string[];
   generatedAt: string;
   speakerMapping?: SpeakerMapping;
+  declinedMerges?: [string, string][];
 }
 
 export interface WriteMetadataParams {
@@ -28,10 +29,11 @@ export interface WriteMetadataParams {
   filesGenerated: string[];
   pipelineResult: PipelineResult;
   speakerMapping?: SpeakerMapping;
+  declinedMerges?: [string, string][];
 }
 
 export function writeMetadata(params: WriteMetadataParams): string {
-  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, speakerMapping } = params;
+  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, speakerMapping, declinedMerges } = params;
   const { passesRun, segments, errors, videoProfile } = pipelineResult;
 
   const output: MetadataOutput = {
@@ -47,6 +49,7 @@ export function writeMetadata(params: WriteMetadataParams): string {
     errors,
     generatedAt: new Date().toISOString(),
     ...(speakerMapping != null && Object.keys(speakerMapping).length > 0 ? { speakerMapping } : {}),
+    ...(declinedMerges != null && declinedMerges.length > 0 ? { declinedMerges } : {}),
   };
 
   return JSON.stringify(output, null, 2);

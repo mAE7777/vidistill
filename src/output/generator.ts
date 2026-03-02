@@ -304,7 +304,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 }
 
 export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMappingParams): Promise<OutputResult> {
-  const { outputDir, speakerMapping } = params;
+  const { outputDir, speakerMapping, declinedMerges } = params;
 
   const errors: string[] = [];
   const filesWritten: string[] = [];
@@ -403,7 +403,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('people.md')) {
     try {
-      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping });
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping, declinedMerges });
       if (content != null) await writeOutputFile('people.md', content);
     } catch (err) {
       errors.push(`people.md: ${String(err)}`);
@@ -459,7 +459,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     }
   }
 
-  // Re-write metadata.json with updated speakerMapping
+  // Re-write metadata.json with updated speakerMapping and declinedMerges
   try {
     const content = writeMetadata({
       title: videoTitle,
@@ -470,6 +470,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       filesGenerated,
       pipelineResult,
       speakerMapping,
+      declinedMerges,
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {

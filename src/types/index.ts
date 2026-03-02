@@ -303,6 +303,7 @@ export interface GenerateOutputParams {
 export interface ReRenderWithSpeakerMappingParams {
   outputDir: string;
   speakerMapping: SpeakerMapping;
+  declinedMerges?: [string, string][];
 }
 
 export interface OutputResult {

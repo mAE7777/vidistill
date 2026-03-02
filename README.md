@@ -89,14 +89,22 @@ Which files are generated depends on the video content — a coding tutorial get
 
 ### Speaker Naming
 
-When multiple speakers are detected, vidistill prompts you to assign real names after processing. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files.
-
-For meetings with 6+ speakers, the top 5 by speaking time are prompted first, with remaining speakers optional.
+When multiple speakers are detected, vidistill prompts you to assign real names after processing. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files. If duplicate names are detected, you'll be prompted to merge them.
 
 To rename speakers after the fact:
 
 ```bash
+# Interactive rename — prompts for each speaker
 vidistill rename-speakers ./vidistill-output/my-meeting/
+
+# List current speaker state
+vidistill rename-speakers ./vidistill-output/my-meeting/ --list
+
+# Quick rename a single speaker
+vidistill rename-speakers ./vidistill-output/my-meeting/ --rename "Steven Kang" "Steven K."
+
+# Merge two speakers (e.g. same person on different devices)
+vidistill rename-speakers ./vidistill-output/my-meeting/ --merge "K Iphone" "Kristian"
 ```
 
 ### Resume

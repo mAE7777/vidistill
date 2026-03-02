@@ -411,9 +411,13 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   });
 
   // Step 12.5: Speaker naming prompt (post-output)
-  const speakerMapping = await promptSpeakerNames(pipelineResult);
-  if (speakerMapping != null && Object.keys(speakerMapping).length > 0) {
-    await reRenderWithSpeakerMapping({ outputDir: outputResult.outputDir, speakerMapping });
+  const namingResult = await promptSpeakerNames(pipelineResult);
+  if (namingResult != null && Object.keys(namingResult.mapping).length > 0) {
+    await reRenderWithSpeakerMapping({
+      outputDir: outputResult.outputDir,
+      speakerMapping: namingResult.mapping,
+      declinedMerges: namingResult.declinedMerges.length > 0 ? namingResult.declinedMerges : undefined,
+    });
   }
 
   // Step 13: Clean completion output
