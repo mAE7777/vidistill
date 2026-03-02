@@ -1,4 +1,3 @@
-import { createRequire } from 'node:module';
 import { defineCommand, runMain } from 'citty';
 import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
@@ -8,8 +7,8 @@ import { run as runMcp } from '../commands/mcp.js';
 import { run as runWatch } from '../commands/watch.js';
 import { run as runRenameSpeakers } from '../commands/rename-speakers.js';
 
-const _require = createRequire(import.meta.url);
-const { version } = _require('../package.json') as { version: string };
+declare const VIDISTILL_VERSION: string;
+const version = VIDISTILL_VERSION;
 
 const DEFAULT_OUTPUT = './vidistill-output/';
 

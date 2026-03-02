@@ -83,6 +83,8 @@ async function readProgressFile(outputDir: string): Promise<ProgressFile | null>
     const raw = await readFile(progressPath, 'utf8');
     const parsed: unknown = JSON.parse(raw);
     if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj['schemaVersion'] !== 'number' || typeof obj['vidistillVersion'] !== 'string' || typeof obj['completedPasses'] !== 'object') return null;
     return parsed as ProgressFile;
   } catch {
     return null;
