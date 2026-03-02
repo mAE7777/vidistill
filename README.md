@@ -107,7 +107,7 @@ If a run is interrupted (Ctrl+C), progress is saved automatically. Re-running th
 
 Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Supported audio formats: MP3, AAC, WAV, FLAC, OGG, M4A.
 
-1. **Input** — downloads YouTube video via yt-dlp or reads local file (video or audio), compresses if over 2GB
+1. **Input** — accepts YouTube URL directly or reads local file (video or audio), compresses if over 2GB
 2. **Pass 0** — scene analysis to classify video type and determine processing strategy
 3. **Pass 1** — transcript extraction with speaker identification
 4. **Pass 2** — visual content extraction (screen states, diagrams, slides)
