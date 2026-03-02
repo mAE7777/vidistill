@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0] - 2026-03-02
+## [0.4.0] - 2026-03-02
 
 ### Added
 - Speaker naming — post-pipeline prompt assigns real names to detected SPEAKER_XX labels, re-renders all affected output files
