@@ -28,7 +28,7 @@ import { writeInsights } from './insights.js';
 import { writePrereqs } from './prereqs.js';
 import { generateTimeline } from './timeline.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
-import { readJsonFile } from '../lib/utils.js';
+import { readJsonFile, buildExpandedMapping } from '../lib/utils.js';
 
 /**
  * Convert a video title into a filesystem-safe slug:
@@ -100,6 +100,11 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   const filesToGenerate = resolveFilesToGenerate(params);
 
+  // Build expanded mapping that includes detected-name keys for cross-referencing
+  const expandedMapping = speakerMapping
+    ? buildExpandedMapping(pipelineResult.segments, speakerMapping)
+    : undefined;
+
   // Helper: write a file and record it
   async function writeOutputFile(filename: string, content: string): Promise<void> {
     const fullPath = join(finalOutputDir, filename);
@@ -113,7 +118,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 2a: transcript.md — always generated
   try {
-    const content = writeTranscript({ pipelineResult, speakerMapping });
+    const content = writeTranscript({ pipelineResult, speakerMapping: expandedMapping });
     await writeOutputFile('transcript.md', content);
   } catch (err) {
     errors.push(`transcript.md: ${String(err)}`);
@@ -122,7 +127,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2b: combined.md — conditional
   if (filesToGenerate.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -156,7 +161,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2d: notes.md — conditional
   if (filesToGenerate.has('notes.md')) {
     try {
-      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping });
+      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping: expandedMapping });
       if (content != null) {
         await writeOutputFile('notes.md', content);
       }
@@ -168,7 +173,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2e: people.md — conditional
   if (filesToGenerate.has('people.md')) {
     try {
-      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping });
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping });
       if (content != null) {
         await writeOutputFile('people.md', content);
       }
@@ -180,7 +185,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2f: chat.md — conditional
   if (filesToGenerate.has('chat.md')) {
     try {
-      const content = writeChat({ segments: pipelineResult.segments, speakerMapping });
+      const content = writeChat({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) {
         await writeOutputFile('chat.md', content);
       }
@@ -207,7 +212,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       const content = writeActionItems({
         segments: pipelineResult.segments,
         synthesisResult: pipelineResult.synthesisResult,
-        speakerMapping,
+        speakerMapping: expandedMapping,
       });
       if (content != null) {
         await writeOutputFile('action-items.md', content);
@@ -220,7 +225,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2i: insights.md — conditional
   if (filesToGenerate.has('insights.md')) {
     try {
-      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping });
+      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) {
         await writeOutputFile('insights.md', content);
       }
@@ -244,7 +249,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2k: timeline.html — conditional on pass1 or pass2 data
   if (filesToGenerate.has('timeline.html')) {
     try {
-      const content = generateTimeline({ pipelineResult, duration, speakerMapping });
+      const content = generateTimeline({ pipelineResult, duration, speakerMapping: expandedMapping });
       await writeOutputFile('timeline.html', content);
     } catch (err) {
       errors.push(`timeline.html: ${String(err)}`);
@@ -285,7 +290,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 5: guide.md — always generated, written LAST (needs full filesGenerated list)
   try {
-    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping });
+    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping });
     await writeOutputFile('guide.md', content);
   } catch (err) {
     errors.push(`guide.md: ${String(err)}`);
@@ -363,12 +368,15 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     filesWritten.push(filename);
   }
 
+  // Build expanded mapping that includes detected-name keys for cross-referencing
+  const expandedMapping = buildExpandedMapping(pipelineResult.segments, speakerMapping);
+
   // Re-render each file that was originally generated (skip raw/ files)
   const filesToReRender = new Set(filesGenerated.filter((f) => !f.startsWith('raw/')));
 
   if (filesToReRender.has('transcript.md')) {
     try {
-      const content = writeTranscript({ pipelineResult, speakerMapping });
+      const content = writeTranscript({ pipelineResult, speakerMapping: expandedMapping });
       await writeOutputFile('transcript.md', content);
     } catch (err) {
       errors.push(`transcript.md: ${String(err)}`);
@@ -377,7 +385,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -386,7 +394,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('notes.md')) {
     try {
-      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping });
+      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping: expandedMapping });
       if (content != null) await writeOutputFile('notes.md', content);
     } catch (err) {
       errors.push(`notes.md: ${String(err)}`);
@@ -395,7 +403,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('people.md')) {
     try {
-      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping });
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping });
       if (content != null) await writeOutputFile('people.md', content);
     } catch (err) {
       errors.push(`people.md: ${String(err)}`);
@@ -404,7 +412,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('chat.md')) {
     try {
-      const content = writeChat({ segments: pipelineResult.segments, speakerMapping });
+      const content = writeChat({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) await writeOutputFile('chat.md', content);
     } catch (err) {
       errors.push(`chat.md: ${String(err)}`);
@@ -416,7 +424,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       const content = writeActionItems({
         segments: pipelineResult.segments,
         synthesisResult: pipelineResult.synthesisResult,
-        speakerMapping,
+        speakerMapping: expandedMapping,
       });
       if (content != null) await writeOutputFile('action-items.md', content);
     } catch (err) {
@@ -426,7 +434,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('insights.md')) {
     try {
-      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping });
+      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) await writeOutputFile('insights.md', content);
     } catch (err) {
       errors.push(`insights.md: ${String(err)}`);
@@ -435,7 +443,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('timeline.html')) {
     try {
-      const content = generateTimeline({ pipelineResult, duration, speakerMapping });
+      const content = generateTimeline({ pipelineResult, duration, speakerMapping: expandedMapping });
       await writeOutputFile('timeline.html', content);
     } catch (err) {
       errors.push(`timeline.html: ${String(err)}`);
@@ -444,7 +452,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('guide.md')) {
     try {
-      const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping });
+      const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping });
       await writeOutputFile('guide.md', content);
     } catch (err) {
       errors.push(`guide.md: ${String(err)}`);

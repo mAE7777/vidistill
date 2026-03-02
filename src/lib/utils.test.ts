@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime, applySpeakerMapping } from './utils.js';
+import { formatTime, applySpeakerMapping, buildExpandedMapping } from './utils.js';
+import type { SegmentResult, Pass1Result } from '../types/index.js';
 
 describe('formatTime', () => {
   it('formats zero as 00:00:00', () => {
@@ -58,5 +59,104 @@ describe('applySpeakerMapping', () => {
     const mapping = { SPEAKER_00: 'Alice', SPEAKER_01: 'Bob' };
     expect(applySpeakerMapping('SPEAKER_00', mapping)).toBe('Alice');
     expect(applySpeakerMapping('SPEAKER_01', mapping)).toBe('Bob');
+  });
+
+  it('extracts SPEAKER_XX from "SPEAKER_XX (description)" format', () => {
+    const mapping = { SPEAKER_00: 'Alice' };
+    expect(applySpeakerMapping('SPEAKER_00 (some person)', mapping)).toBe('Alice');
+  });
+
+  it('strips parenthetical suffix for name lookup', () => {
+    const mapping = { 'K Iphone': 'Kristian' };
+    expect(applySpeakerMapping('K Iphone (Chris)', mapping)).toBe('Kristian');
+  });
+
+  it('falls back to case-insensitive match', () => {
+    const mapping = { 'Chenhao Kang': 'Steven Kang' };
+    expect(applySpeakerMapping('chenhao Kang', mapping)).toBe('Steven Kang');
+  });
+
+  it('prefers direct match over fallbacks', () => {
+    const mapping = { 'SPEAKER_00 (Alice)': 'Exact', SPEAKER_00: 'Prefix' };
+    expect(applySpeakerMapping('SPEAKER_00 (Alice)', mapping)).toBe('Exact');
+  });
+});
+
+describe('buildExpandedMapping', () => {
+  function makePass1(speakers: { id: string; desc: string }[], entries: { speaker: string }[]): Pass1Result {
+    return {
+      segment_index: 0,
+      time_range: '00:00:00 - 00:10:00',
+      speaker_summary: speakers.map((s) => ({ speaker_id: s.id, description: s.desc })),
+      transcript_entries: entries.map((e) => ({
+        timestamp: '00:00:00',
+        speaker: e.speaker,
+        text: 'hello',
+        tone: 'neutral',
+      })),
+    };
+  }
+
+  function makeSeg(pass1: Pass1Result): SegmentResult {
+    return { index: 0, pass1, pass2: null };
+  }
+
+  it('maps detected name from description to user-assigned name', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_00', desc: 'Haoxuan Wang, a student' }],
+      [{ speaker: 'SPEAKER_00' }],
+    );
+    const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_00: 'Mike Wang' });
+    expect(result['Haoxuan Wang']).toBe('Mike Wang');
+    expect(result['SPEAKER_00']).toBe('Mike Wang');
+  });
+
+  it('maps alt name from parens in description', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_05', desc: 'Chris (K Iphone), a student' }],
+      [{ speaker: 'SPEAKER_05' }],
+    );
+    const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_05: 'Kristian' });
+    expect(result['Chris']).toBe('Kristian');
+    expect(result['K Iphone']).toBe('Kristian');
+  });
+
+  it('maps name from transcript entry speaker field', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_02', desc: 'Chenhao Kang, a student' }],
+      [{ speaker: 'SPEAKER_02 (chenhao Kang)' }],
+    );
+    const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_02: 'Steven Kang' });
+    expect(result['chenhao Kang']).toBe('Steven Kang');
+    expect(result['Chenhao Kang']).toBe('Steven Kang');
+  });
+
+  it('preserves original SPEAKER_XX keys', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_00', desc: 'Alice, presenter' }],
+      [{ speaker: 'SPEAKER_00' }],
+    );
+    const mapping = { SPEAKER_00: 'Alice B' };
+    const result = buildExpandedMapping([makeSeg(pass1)], mapping);
+    expect(result['SPEAKER_00']).toBe('Alice B');
+  });
+
+  it('skips speakers not in user mapping', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_01', desc: 'Bob, viewer' }],
+      [{ speaker: 'SPEAKER_01' }],
+    );
+    const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_00: 'Alice' });
+    expect(result['Bob']).toBeUndefined();
+  });
+
+  it('does not add identity mappings', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_00', desc: 'Alice, presenter' }],
+      [{ speaker: 'SPEAKER_00 (Alice)' }],
+    );
+    const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_00: 'Alice' });
+    // 'Alice' → 'Alice' should not be added
+    expect(Object.keys(result)).not.toContain('Alice');
   });
 });

@@ -47,10 +47,79 @@ export function normalizeFilename(name: string): string {
 }
 
 export function applySpeakerMapping(label: string, mapping?: Record<string, string>): string {
-  return mapping?.[label] ?? label;
+  if (!mapping) return label;
+  // Direct match
+  if (mapping[label] != null) return mapping[label];
+  // Extract SPEAKER_XX prefix from "SPEAKER_XX (description)" format
+  const speakerMatch = label.match(/^(SPEAKER_\d+)\s*\(/);
+  if (speakerMatch && mapping[speakerMatch[1]] != null) return mapping[speakerMatch[1]];
+  // Strip parenthetical suffix: "K Iphone (Chris)" → try "K Iphone"
+  const parenMatch = label.match(/^(.+?)\s*\(.*\)$/);
+  if (parenMatch) {
+    const stripped = parenMatch[1].trim();
+    if (mapping[stripped] != null) return mapping[stripped];
+  }
+  // Case-insensitive fallback
+  const lower = label.toLowerCase();
+  for (const [key, value] of Object.entries(mapping)) {
+    if (key.toLowerCase() === lower) return value;
+  }
+  return label;
 }
 
+import type { SegmentResult, SpeakerMapping } from '../types/index.js';
 import { readFile } from 'fs/promises';
+
+/**
+ * Build an expanded speaker mapping that includes detected-name keys
+ * in addition to SPEAKER_XX keys from the user's mapping.
+ *
+ * Cross-references speaker_summary descriptions and transcript entry
+ * speaker fields to map Gemini-detected names to user-assigned names.
+ */
+export function buildExpandedMapping(
+  segments: SegmentResult[],
+  speakerMapping: SpeakerMapping,
+): SpeakerMapping {
+  const expanded: SpeakerMapping = { ...speakerMapping };
+
+  for (const seg of segments) {
+    if (seg.pass1 == null) continue;
+
+    for (const info of seg.pass1.speaker_summary) {
+      const userAssigned = speakerMapping[info.speaker_id];
+      if (!userAssigned || !info.description) continue;
+
+      // Extract name from description (before first comma)
+      const descName = info.description.split(',')[0].trim();
+      if (!descName) continue;
+
+      // Handle alt names in parens: "Haoxuan Wang (Mike)" → map both
+      const altMatch = descName.match(/^(.+?)\s*\((.+?)\)$/);
+      if (altMatch) {
+        const mainName = altMatch[1].trim();
+        const altName = altMatch[2].trim();
+        if (mainName !== userAssigned) expanded[mainName] = userAssigned;
+        if (altName !== userAssigned) expanded[altName] = userAssigned;
+      } else if (descName !== userAssigned) {
+        expanded[descName] = userAssigned;
+      }
+    }
+
+    // Extract names from transcript entry speaker fields: "SPEAKER_XX (Name)"
+    for (const entry of seg.pass1.transcript_entries) {
+      const match = entry.speaker.match(/^(SPEAKER_\d+)\s*\((.+?)\)$/);
+      if (match) {
+        const userAssigned = speakerMapping[match[1]];
+        if (userAssigned && match[2] !== userAssigned) {
+          expanded[match[2]] = userAssigned;
+        }
+      }
+    }
+  }
+
+  return expanded;
+}
 
 /**
  * Read a JSON file from disk, returning null on any error (missing file, corrupt JSON).

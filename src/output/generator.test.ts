@@ -363,7 +363,7 @@ describe('generateOutput', () => {
     const params = makeParams({ speakerMapping: mapping });
     await generateOutput(params);
     const callArgs = (writeTranscript as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(callArgs.speakerMapping).toEqual(mapping);
+    expect(callArgs.speakerMapping).toMatchObject(mapping);
   });
 });
 
@@ -384,7 +384,7 @@ describe('reRenderWithSpeakerMapping', () => {
 
     const calls = (writeTranscript as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    expect(calls[0][0].speakerMapping).toEqual(mapping);
+    expect(calls[0][0].speakerMapping).toMatchObject(mapping);
   });
 
   it('does not modify raw/ files', async () => {
