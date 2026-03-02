@@ -1,5 +1,5 @@
-import { formatDuration } from '../lib/utils.js';
-import type { PipelineResult, VideoProfile, SynthesisResult } from '../types/index.js';
+import { formatDuration, applySpeakerMapping } from '../lib/utils.js';
+import type { PipelineResult, VideoProfile, SynthesisResult, SpeakerMapping } from '../types/index.js';
 
 export interface WriteGuideParams {
   title: string;
@@ -7,6 +7,7 @@ export interface WriteGuideParams {
   duration: number;
   pipelineResult: PipelineResult;
   filesGenerated?: string[];
+  speakerMapping?: SpeakerMapping;
 }
 
 function renderFilesTable(filesGenerated: string[] | undefined): string {
@@ -35,7 +36,7 @@ function renderVideoType(profile: VideoProfile | undefined): string {
   return profile.type;
 }
 
-function renderProcessingDetails(pipelineResult: PipelineResult): string {
+function renderProcessingDetails(pipelineResult: PipelineResult, speakerMapping?: SpeakerMapping): string {
   const { passesRun, videoProfile, strategy } = pipelineResult;
   const lines: string[] = [];
   lines.push(`- **Passes run:** ${passesRun.length > 0 ? passesRun.join(', ') : 'none'}`);
@@ -43,7 +44,8 @@ function renderProcessingDetails(pipelineResult: PipelineResult): string {
     lines.push(`- **Complexity:** ${videoProfile.complexity}`);
     lines.push(`- **Speakers detected:** ${videoProfile.speakers.count}`);
     if (videoProfile.speakers.identified.length > 0) {
-      lines.push(`- **Identified speakers:** ${videoProfile.speakers.identified.join(', ')}`);
+      const identified = videoProfile.speakers.identified.map((s) => applySpeakerMapping(s, speakerMapping));
+      lines.push(`- **Identified speakers:** ${identified.join(', ')}`);
     }
   }
   if (strategy != null) {
@@ -80,7 +82,7 @@ function renderIncompletePasses(pipelineResult: PipelineResult): string {
 }
 
 export function writeGuide(params: WriteGuideParams): string {
-  const { title, source, duration, pipelineResult, filesGenerated } = params;
+  const { title, source, duration, pipelineResult, filesGenerated, speakerMapping } = params;
   const { synthesisResult, videoProfile } = pipelineResult;
 
   const overview = synthesisResult?.overview ?? '_No summary available — synthesis pass did not run or produced no output._';
@@ -109,7 +111,7 @@ export function writeGuide(params: WriteGuideParams): string {
     '',
     '## Processing Details',
     '',
-    renderProcessingDetails(pipelineResult),
+    renderProcessingDetails(pipelineResult, speakerMapping),
     renderIncompletePasses(pipelineResult),
   ];
 

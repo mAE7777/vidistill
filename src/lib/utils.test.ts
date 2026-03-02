@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime } from './utils.js';
+import { formatTime, applySpeakerMapping } from './utils.js';
 
 describe('formatTime', () => {
   it('formats zero as 00:00:00', () => {
@@ -34,5 +34,29 @@ describe('formatTime', () => {
 
   it('formats large values correctly', () => {
     expect(formatTime(86400)).toBe('24:00:00');
+  });
+});
+
+describe('applySpeakerMapping', () => {
+  it('returns mapped name when label exists in mapping', () => {
+    expect(applySpeakerMapping('SPEAKER_00', { SPEAKER_00: 'Alice' })).toBe('Alice');
+  });
+
+  it('returns original label when not in mapping', () => {
+    expect(applySpeakerMapping('SPEAKER_01', { SPEAKER_00: 'Alice' })).toBe('SPEAKER_01');
+  });
+
+  it('returns original label when mapping is undefined', () => {
+    expect(applySpeakerMapping('SPEAKER_00', undefined)).toBe('SPEAKER_00');
+  });
+
+  it('returns original label when mapping is empty', () => {
+    expect(applySpeakerMapping('SPEAKER_00', {})).toBe('SPEAKER_00');
+  });
+
+  it('handles multiple entries in mapping', () => {
+    const mapping = { SPEAKER_00: 'Alice', SPEAKER_01: 'Bob' };
+    expect(applySpeakerMapping('SPEAKER_00', mapping)).toBe('Alice');
+    expect(applySpeakerMapping('SPEAKER_01', mapping)).toBe('Bob');
   });
 });

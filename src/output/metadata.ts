@@ -1,6 +1,7 @@
 import type {
   PipelineResult,
   VideoType,
+  SpeakerMapping,
 } from '../types/index.js';
 
 export interface MetadataOutput {
@@ -15,6 +16,7 @@ export interface MetadataOutput {
   filesGenerated: string[];
   errors: string[];
   generatedAt: string;
+  speakerMapping?: SpeakerMapping;
 }
 
 export interface WriteMetadataParams {
@@ -25,10 +27,11 @@ export interface WriteMetadataParams {
   processingTimeMs: number;
   filesGenerated: string[];
   pipelineResult: PipelineResult;
+  speakerMapping?: SpeakerMapping;
 }
 
 export function writeMetadata(params: WriteMetadataParams): string {
-  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult } = params;
+  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, speakerMapping } = params;
   const { passesRun, segments, errors, videoProfile } = pipelineResult;
 
   const output: MetadataOutput = {
@@ -43,6 +46,7 @@ export function writeMetadata(params: WriteMetadataParams): string {
     filesGenerated,
     errors,
     generatedAt: new Date().toISOString(),
+    ...(speakerMapping != null && Object.keys(speakerMapping).length > 0 ? { speakerMapping } : {}),
   };
 
   return JSON.stringify(output, null, 2);

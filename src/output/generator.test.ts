@@ -1,14 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateOutput, slugify } from './generator.js';
+import { generateOutput, reRenderWithSpeakerMapping, slugify } from './generator.js';
 import type { GenerateOutputParams, PipelineResult } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
 // fs/promises mock
 // ---------------------------------------------------------------------------
-vi.mock('fs/promises', () => ({
-  mkdir: vi.fn().mockResolvedValue(undefined),
-  writeFile: vi.fn().mockResolvedValue(undefined),
-}));
+const METADATA_JSON = JSON.stringify({
+  videoTitle: 'Test Video',
+  source: 'https://example.com/video',
+  duration: 600,
+  model: 'gemini-pro',
+  processingTimeMs: 1000,
+  filesGenerated: ['transcript.md', 'notes.md', 'people.md', 'chat.md', 'action-items.md', 'insights.md', 'timeline.html', 'guide.md', 'raw/pass1-seg0.json'],
+  passesRun: ['pass1'],
+  errors: [],
+});
+
+const PASS1_SEG0_JSON = JSON.stringify({
+  segment_index: 0,
+  time_range: '0:00-10:00',
+  transcript_entries: [{ timestamp: '0:01', speaker: 'SPEAKER_00', text: 'Hello', tone: 'neutral' }],
+  speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'Instructor' }],
+});
+
+vi.mock('fs/promises', () => {
+  const readFileMock = vi.fn().mockImplementation((path: string) => {
+    if (path.endsWith('metadata.json')) return Promise.resolve(METADATA_JSON);
+    if (path.endsWith('pass1-seg0.json')) return Promise.resolve(PASS1_SEG0_JSON);
+    return Promise.reject(new Error('ENOENT'));
+  });
+  return {
+    mkdir: vi.fn().mockResolvedValue(undefined),
+    writeFile: vi.fn().mockResolvedValue(undefined),
+    readFile: readFileMock,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Writer mocks — return deterministic strings so we can verify calls
@@ -329,5 +355,63 @@ describe('generateOutput', () => {
     const callArgs = mockWriteCodeFiles.mock.calls[0][0];
     expect(callArgs.uncertainFiles).toBeInstanceOf(Set);
     expect(callArgs.uncertainFiles!.size).toBe(0);
+  });
+
+  it('threads speakerMapping to writeTranscript', async () => {
+    const { writeTranscript } = await import('./transcript.js');
+    const mapping = { SPEAKER_00: 'Alice' };
+    const params = makeParams({ speakerMapping: mapping });
+    await generateOutput(params);
+    const callArgs = (writeTranscript as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(callArgs.speakerMapping).toEqual(mapping);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reRenderWithSpeakerMapping tests
+// ---------------------------------------------------------------------------
+
+describe('reRenderWithSpeakerMapping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('re-renders transcript.md with speaker mapping', async () => {
+    const { writeTranscript } = await import('./transcript.js');
+    const mapping = { SPEAKER_00: 'Alice' };
+
+    await reRenderWithSpeakerMapping({ outputDir: '/tmp/output/test-video', speakerMapping: mapping });
+
+    const calls = (writeTranscript as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0][0].speakerMapping).toEqual(mapping);
+  });
+
+  it('does not modify raw/ files', async () => {
+    const { writeFile } = await import('fs/promises');
+    const mapping = { SPEAKER_00: 'Alice' };
+
+    await reRenderWithSpeakerMapping({ outputDir: '/tmp/output/test-video', speakerMapping: mapping });
+
+    const writeCalls = (writeFile as ReturnType<typeof vi.fn>).mock.calls as Array<[string, string, string]>;
+    const writtenPaths = writeCalls.map((c) => c[0]);
+    expect(writtenPaths.every((p) => !p.includes('/raw/'))).toBe(true);
+  });
+
+  it('returns errors array and continues on write failure', async () => {
+    const { writeFile } = await import('fs/promises');
+    (writeFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('disk full'));
+
+    const mapping = { SPEAKER_00: 'Alice' };
+    const result = await reRenderWithSpeakerMapping({ outputDir: '/tmp/output/test-video', speakerMapping: mapping });
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    // Should still have re-rendered other files
+  });
+
+  it('returns outputDir unchanged', async () => {
+    const mapping = { SPEAKER_00: 'Alice' };
+    const result = await reRenderWithSpeakerMapping({ outputDir: '/tmp/output/test-video', speakerMapping: mapping });
+    expect(result.outputDir).toBe('/tmp/output/test-video');
   });
 });

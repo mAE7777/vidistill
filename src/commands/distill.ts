@@ -14,10 +14,11 @@ import { handleYouTube, extractVideoId } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
-import { generateOutput, slugify } from '../output/generator.js';
+import { generateOutput, reRenderWithSpeakerMapping, slugify } from '../output/generator.js';
 import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
 import { determineStrategy } from '../core/strategy.js';
+import { promptSpeakerNames } from '../cli/speaker-naming.js';
 import type { ProgressFile, VideoProfile, PassStrategy } from '../types/index.js';
 
 declare const VIDISTILL_VERSION: string;
@@ -408,6 +409,12 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     model,
     processingTimeMs: elapsedMs,
   });
+
+  // Step 12.5: Speaker naming prompt (post-output)
+  const speakerMapping = await promptSpeakerNames(pipelineResult);
+  if (speakerMapping != null && Object.keys(speakerMapping).length > 0) {
+    await reRenderWithSpeakerMapping({ outputDir: outputResult.outputDir, speakerMapping });
+  }
 
   // Step 13: Clean completion output
   const elapsedSecs = Math.round(elapsedMs / 1000);

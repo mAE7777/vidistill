@@ -1,7 +1,9 @@
-import type { PipelineResult, TranscriptEntry, Pass1Result } from '../types/index.js';
+import type { PipelineResult, TranscriptEntry, Pass1Result, SpeakerMapping } from '../types/index.js';
+import { applySpeakerMapping } from '../lib/utils.js';
 
 export interface WriteTranscriptParams {
   pipelineResult: PipelineResult;
+  speakerMapping?: SpeakerMapping;
 }
 
 const PAUSE_THRESHOLD_SECONDS = 1.5;
@@ -20,23 +22,30 @@ function applyEmphasis(text: string, emphasisWords: string[] | undefined): strin
   return result;
 }
 
-function renderEntry(entry: TranscriptEntry): string {
+function renderEntry(entry: TranscriptEntry, speakerMapping?: SpeakerMapping): string {
   const emphasized = applyEmphasis(entry.text, entry.emphasis_words);
   const pause =
     entry.pause_after_seconds != null && entry.pause_after_seconds >= PAUSE_THRESHOLD_SECONDS
       ? ` _(pause ${entry.pause_after_seconds.toFixed(1)}s)_`
       : '';
-  return `**[${entry.timestamp}]** **${entry.speaker}:** ${emphasized}${pause}`;
+  const speaker = applySpeakerMapping(entry.speaker, speakerMapping);
+  return `**[${entry.timestamp}]** **${speaker}:** ${emphasized}${pause}`;
 }
 
-function renderPass1(pass1: Pass1Result): string {
+function renderPass1(pass1: Pass1Result, speakerMapping?: SpeakerMapping): string {
   const lines: string[] = [];
 
   lines.push(`### Segment ${pass1.segment_index + 1} — ${pass1.time_range}`);
   lines.push('');
 
   if (pass1.speaker_summary.length > 0) {
-    lines.push('_Speakers: ' + pass1.speaker_summary.map((s) => `${s.speaker_id} (${s.description})`).join(', ') + '_');
+    lines.push(
+      '_Speakers: ' +
+        pass1.speaker_summary
+          .map((s) => `${applySpeakerMapping(s.speaker_id, speakerMapping)} (${s.description})`)
+          .join(', ') +
+        '_',
+    );
     lines.push('');
   }
 
@@ -44,7 +53,7 @@ function renderPass1(pass1: Pass1Result): string {
     lines.push('_No transcript entries for this segment._');
   } else {
     for (const entry of pass1.transcript_entries) {
-      lines.push(renderEntry(entry));
+      lines.push(renderEntry(entry, speakerMapping));
     }
   }
 
@@ -52,7 +61,7 @@ function renderPass1(pass1: Pass1Result): string {
 }
 
 export function writeTranscript(params: WriteTranscriptParams): string {
-  const { pipelineResult } = params;
+  const { pipelineResult, speakerMapping } = params;
   const { segments } = pipelineResult;
 
   const sections: string[] = ['# Transcript', ''];
@@ -66,7 +75,7 @@ export function writeTranscript(params: WriteTranscriptParams): string {
 
   for (const seg of segmentsWithPass1) {
     if (seg.pass1 != null) {
-      sections.push(renderPass1(seg.pass1));
+      sections.push(renderPass1(seg.pass1, speakerMapping));
       sections.push('');
       sections.push('---');
       sections.push('');

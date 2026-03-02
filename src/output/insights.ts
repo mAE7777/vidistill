@@ -1,7 +1,8 @@
-import type { SegmentResult, EmotionalShift, EmphasisPattern } from '../types/index.js';
+import type { SegmentResult, EmotionalShift, EmphasisPattern, SpeakerMapping } from '../types/index.js';
 
 export interface WriteInsightsParams {
   segments: SegmentResult[];
+  speakerMapping?: SpeakerMapping;
 }
 
 function collectEmotionalShifts(segments: SegmentResult[]): EmotionalShift[] {

@@ -1,9 +1,10 @@
-import type { PipelineResult } from '../types/index.js';
-import { parseTimestamp, formatTime } from '../lib/utils.js';
+import type { PipelineResult, SpeakerMapping } from '../types/index.js';
+import { parseTimestamp, formatTime, applySpeakerMapping } from '../lib/utils.js';
 
 export interface GenerateTimelineParams {
   pipelineResult: PipelineResult;
   duration: number;
+  speakerMapping?: SpeakerMapping;
 }
 
 interface TimelineMarker {
@@ -28,7 +29,7 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function collectMarkers(pipelineResult: PipelineResult, duration: number): TimelineMarker[] {
+function collectMarkers(pipelineResult: PipelineResult, duration: number, speakerMapping?: SpeakerMapping): TimelineMarker[] {
   const markers: TimelineMarker[] = [];
   const SPEECH_WINDOW_SECONDS = 30;
 
@@ -48,7 +49,7 @@ function collectMarkers(pipelineResult: PipelineResult, duration: number): Timel
             markers.push({ seconds: windowStart, label: windowLabel, lane: 'speech', detail: windowDetail });
           }
           windowStart = seconds;
-          windowLabel = entry.speaker || 'Speech';
+          windowLabel = applySpeakerMapping(entry.speaker || 'Speech', speakerMapping);
           windowDetail = entry.text.slice(0, 80) + (entry.text.length > 80 ? '…' : '');
         }
       }
@@ -146,8 +147,8 @@ function buildTimeAxis(duration: number): string {
 }
 
 export function generateTimeline(params: GenerateTimelineParams): string {
-  const { pipelineResult, duration } = params;
-  const markers = collectMarkers(pipelineResult, duration);
+  const { pipelineResult, duration, speakerMapping } = params;
+  const markers = collectMarkers(pipelineResult, duration, speakerMapping);
   const effectiveDuration = duration > 0 ? duration : 1;
 
   const speechLane = renderLane('speech', 'Speech', markers, effectiveDuration);

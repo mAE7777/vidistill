@@ -1,12 +1,14 @@
-import type { PeopleExtraction, Participant } from '../types/index.js';
+import type { PeopleExtraction, Participant, SpeakerMapping } from '../types/index.js';
+import { applySpeakerMapping } from '../lib/utils.js';
 
 export interface WritePeopleParams {
   peopleExtraction: PeopleExtraction | null | undefined;
+  speakerMapping?: SpeakerMapping;
 }
 
-function renderParticipant(p: Participant, index: number): string[] {
+function renderParticipant(p: Participant, index: number, speakerMapping?: SpeakerMapping): string[] {
   const lines: string[] = [];
-  lines.push(`## ${index + 1}. ${p.name}`);
+  lines.push(`## ${index + 1}. ${applySpeakerMapping(p.name, speakerMapping)}`);
   lines.push('');
 
   const meta: string[] = [];
@@ -44,7 +46,7 @@ function renderParticipant(p: Participant, index: number): string[] {
 }
 
 export function writePeople(params: WritePeopleParams): string | null {
-  const { peopleExtraction } = params;
+  const { peopleExtraction, speakerMapping } = params;
   if (peopleExtraction == null) return null;
   if (peopleExtraction.participants.length === 0) return null;
 
@@ -53,7 +55,7 @@ export function writePeople(params: WritePeopleParams): string | null {
   for (let i = 0; i < peopleExtraction.participants.length; i++) {
     const p = peopleExtraction.participants[i];
     if (p != null) {
-      sections.push(...renderParticipant(p, i));
+      sections.push(...renderParticipant(p, i, speakerMapping));
     }
   }
 

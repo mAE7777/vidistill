@@ -1,7 +1,9 @@
-import type { SegmentResult, ChatMessage, ExtractedLink } from '../types/index.js';
+import type { SegmentResult, ChatMessage, ExtractedLink, SpeakerMapping } from '../types/index.js';
+import { applySpeakerMapping } from '../lib/utils.js';
 
 export interface WriteChatParams {
   segments: SegmentResult[];
+  speakerMapping?: SpeakerMapping;
 }
 
 function collectMessages(segments: SegmentResult[]): ChatMessage[] {
@@ -24,11 +26,12 @@ function collectLinks(segments: SegmentResult[]): ExtractedLink[] {
   return links;
 }
 
-function renderMessages(messages: ChatMessage[]): string[] {
+function renderMessages(messages: ChatMessage[], speakerMapping?: SpeakerMapping): string[] {
   if (messages.length === 0) return [];
   const lines: string[] = ['## Chat Log', ''];
   for (const m of messages) {
-    lines.push(`**[${m.timestamp}]** **${m.sender}:** ${m.text}`);
+    const sender = applySpeakerMapping(m.sender, speakerMapping);
+    lines.push(`**[${m.timestamp}]** **${sender}:** ${m.text}`);
   }
   lines.push('');
   return lines;
@@ -53,7 +56,7 @@ function renderLinks(links: ExtractedLink[]): string[] {
 }
 
 export function writeChat(params: WriteChatParams): string | null {
-  const { segments } = params;
+  const { segments, speakerMapping } = params;
 
   const hasChat = segments.some((s) => s.pass3c != null);
   if (!hasChat) return null;
@@ -65,7 +68,7 @@ export function writeChat(params: WriteChatParams): string | null {
 
   const sections: string[] = ['# Chat', ''];
 
-  sections.push(...renderMessages(messages));
+  sections.push(...renderMessages(messages, speakerMapping));
   sections.push(...renderLinks(links));
 
   // Trim trailing blank lines

@@ -5,10 +5,13 @@ import type {
   MeetingNotesActionItem,
   MeetingNotesQuestion,
   MeetingNotesTopic,
+  SpeakerMapping,
 } from '../types/index.js';
+import { applySpeakerMapping } from '../lib/utils.js';
 
 export interface WriteNotesParams {
   synthesisResult: SynthesisResult | null | undefined;
+  speakerMapping?: SpeakerMapping;
 }
 
 function renderDecisions(decisions: MeetingNotesDecision[]): string[] {
@@ -71,11 +74,12 @@ function renderQuestions(questions: MeetingNotesQuestion[]): string[] {
   return lines;
 }
 
-function renderActionItems(items: MeetingNotesActionItem[]): string[] {
+function renderActionItems(items: MeetingNotesActionItem[], speakerMapping?: SpeakerMapping): string[] {
   if (items.length === 0) return [];
   const lines: string[] = ['## Action Items', ''];
   for (const a of items) {
-    const by = a.mentioned_by.length > 0 ? ` — _${a.mentioned_by}_` : '';
+    const mentionedBy = applySpeakerMapping(a.mentioned_by, speakerMapping);
+    const by = mentionedBy.length > 0 ? ` — _${mentionedBy}_` : '';
     lines.push(`- **[${a.timestamp}]** ${a.item}${by}`);
   }
   lines.push('');
@@ -93,7 +97,7 @@ function hasMeaningfulContent(s: SynthesisResult): boolean {
 }
 
 export function writeNotes(params: WriteNotesParams): string | null {
-  const { synthesisResult } = params;
+  const { synthesisResult, speakerMapping } = params;
   if (synthesisResult == null) return null;
   if (!hasMeaningfulContent(synthesisResult)) return null;
 
@@ -108,7 +112,7 @@ export function writeNotes(params: WriteNotesParams): string | null {
   sections.push(...renderConcepts(synthesisResult.key_concepts));
   sections.push(...renderTopics(synthesisResult.topics));
   sections.push(...renderQuestions(synthesisResult.questions_raised));
-  sections.push(...renderActionItems(synthesisResult.action_items));
+  sections.push(...renderActionItems(synthesisResult.action_items, speakerMapping));
 
   // Trim trailing blank lines
   while (sections[sections.length - 1] === '') sections.pop();

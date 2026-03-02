@@ -297,6 +297,12 @@ export interface GenerateOutputParams {
   duration: number;
   model: string;
   processingTimeMs: number;
+  speakerMapping?: SpeakerMapping;
+}
+
+export interface ReRenderWithSpeakerMappingParams {
+  outputDir: string;
+  speakerMapping: SpeakerMapping;
 }
 
 export interface OutputResult {
@@ -304,3 +310,5 @@ export interface OutputResult {
   filesGenerated: string[];
   errors: string[];
 }
+
+export type SpeakerMapping = Record<string, string>;

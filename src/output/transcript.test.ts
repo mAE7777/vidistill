@@ -203,4 +203,34 @@ describe('writeTranscript', () => {
     const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
     expect(result).toContain('No transcript entries for this segment');
   });
+
+  it('replaces speaker labels with mapped names in entries', () => {
+    const result = writeTranscript({
+      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
+      speakerMapping: { SPEAKER_00: 'Alice', SPEAKER_01: 'Bob' },
+    });
+    expect(result).toContain('Alice');
+    expect(result).toContain('Bob');
+    expect(result).not.toContain('SPEAKER_00');
+    expect(result).not.toContain('SPEAKER_01');
+  });
+
+  it('replaces speaker_id in speaker summary with mapped names', () => {
+    const result = writeTranscript({
+      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
+      speakerMapping: { SPEAKER_00: 'Alice' },
+    });
+    expect(result).toContain('Alice');
+    expect(result).not.toContain('SPEAKER_00');
+    // SPEAKER_01 not in mapping, remains unchanged
+    expect(result).toContain('SPEAKER_01');
+  });
+
+  it('leaves speaker labels unchanged when no mapping provided', () => {
+    const result = writeTranscript({
+      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
+    });
+    expect(result).toContain('SPEAKER_00');
+    expect(result).toContain('SPEAKER_01');
+  });
 });

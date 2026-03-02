@@ -46,6 +46,10 @@ export function normalizeFilename(name: string): string {
     .replace(/\\/g, '/');
 }
 
+export function applySpeakerMapping(label: string, mapping?: Record<string, string>): string {
+  return mapping?.[label] ?? label;
+}
+
 export function changeTypeBadge(changeType: string): string {
   const badges: Record<string, string> = {
     new_file: '[NEW]',

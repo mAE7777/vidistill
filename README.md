@@ -87,6 +87,18 @@ vidistill-output/my-video/
 
 Which files are generated depends on the video content — a coding tutorial gets `code/`, a meeting gets `people.md` and `action-items.md`, etc.
 
+### Speaker Naming
+
+When multiple speakers are detected, vidistill prompts you to assign real names after processing. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files.
+
+For meetings with 6+ speakers, the top 5 by speaking time are prompted first, with remaining speakers optional.
+
+To rename speakers after the fact:
+
+```bash
+vidistill rename-speakers ./vidistill-output/my-meeting/
+```
+
 ### Resume
 
 If a run is interrupted (Ctrl+C), progress is saved automatically. Re-running the same command detects the incomplete run and offers to resume from where it left off.

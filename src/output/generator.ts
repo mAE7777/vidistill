@@ -1,6 +1,20 @@
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, writeFile, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import type { GenerateOutputParams, OutputResult } from '../types/index.js';
+import type {
+  GenerateOutputParams,
+  OutputResult,
+  ReRenderWithSpeakerMappingParams,
+  SpeakerMapping,
+  PipelineResult,
+  VideoProfile,
+  Pass1Result,
+  Pass2Result,
+  ChatExtraction,
+  ImplicitSignals,
+  PeopleExtraction,
+  CodeReconstruction,
+  SynthesisResult,
+} from '../types/index.js';
 import { writeGuide } from './guide.js';
 import { writeTranscript } from './transcript.js';
 import { writeCombined } from './combined.js';
@@ -72,7 +86,7 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
 }
 
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
-  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs } = params;
+  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, speakerMapping } = params;
 
   const slug = slugify(videoTitle);
   const finalOutputDir = join(outputDir, slug);
@@ -98,7 +112,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 2a: transcript.md — always generated
   try {
-    const content = writeTranscript({ pipelineResult });
+    const content = writeTranscript({ pipelineResult, speakerMapping });
     await writeOutputFile('transcript.md', content);
   } catch (err) {
     errors.push(`transcript.md: ${String(err)}`);
@@ -141,7 +155,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2d: notes.md — conditional
   if (filesToGenerate.has('notes.md')) {
     try {
-      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult });
+      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping });
       if (content != null) {
         await writeOutputFile('notes.md', content);
       }
@@ -153,7 +167,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2e: people.md — conditional
   if (filesToGenerate.has('people.md')) {
     try {
-      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction });
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping });
       if (content != null) {
         await writeOutputFile('people.md', content);
       }
@@ -165,7 +179,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2f: chat.md — conditional
   if (filesToGenerate.has('chat.md')) {
     try {
-      const content = writeChat({ segments: pipelineResult.segments });
+      const content = writeChat({ segments: pipelineResult.segments, speakerMapping });
       if (content != null) {
         await writeOutputFile('chat.md', content);
       }
@@ -192,6 +206,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       const content = writeActionItems({
         segments: pipelineResult.segments,
         synthesisResult: pipelineResult.synthesisResult,
+        speakerMapping,
       });
       if (content != null) {
         await writeOutputFile('action-items.md', content);
@@ -204,7 +219,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2i: insights.md — conditional
   if (filesToGenerate.has('insights.md')) {
     try {
-      const content = writeInsights({ segments: pipelineResult.segments });
+      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping });
       if (content != null) {
         await writeOutputFile('insights.md', content);
       }
@@ -228,7 +243,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2k: timeline.html — conditional on pass1 or pass2 data
   if (filesToGenerate.has('timeline.html')) {
     try {
-      const content = generateTimeline({ pipelineResult, duration });
+      const content = generateTimeline({ pipelineResult, duration, speakerMapping });
       await writeOutputFile('timeline.html', content);
     } catch (err) {
       errors.push(`timeline.html: ${String(err)}`);
@@ -260,6 +275,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       processingTimeMs,
       filesGenerated: [...filesGenerated],
       pipelineResult,
+      speakerMapping,
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {
@@ -268,7 +284,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 5: guide.md — always generated, written LAST (needs full filesGenerated list)
   try {
-    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated });
+    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping });
     await writeOutputFile('guide.md', content);
   } catch (err) {
     errors.push(`guide.md: ${String(err)}`);
@@ -277,6 +293,191 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   return {
     outputDir: finalOutputDir,
     filesGenerated,
+    errors,
+  };
+}
+
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const text = await readFile(filePath, 'utf8');
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMappingParams): Promise<OutputResult> {
+  const { outputDir, speakerMapping } = params;
+
+  const errors: string[] = [];
+  const filesWritten: string[] = [];
+
+  // Read metadata.json for non-raw fields
+  const metadata = await readJsonFile<{
+    videoTitle: string;
+    source: string;
+    duration: number;
+    model: string;
+    processingTimeMs: number;
+    filesGenerated: string[];
+    passesRun: string[];
+    errors: string[];
+  }>(join(outputDir, 'metadata.json'));
+
+  const videoTitle = metadata?.videoTitle ?? '';
+  const source = metadata?.source ?? '';
+  const duration = metadata?.duration ?? 0;
+  const model = metadata?.model ?? '';
+  const processingTimeMs = metadata?.processingTimeMs ?? 0;
+  const filesGenerated = metadata?.filesGenerated ?? [];
+
+  // Reconstruct PipelineResult from raw/ JSON
+  const rawDir = join(outputDir, 'raw');
+
+  const videoProfile = await readJsonFile<VideoProfile>(join(rawDir, 'pass0-scene.json'));
+  const peopleExtraction = await readJsonFile<PeopleExtraction>(join(rawDir, 'pass3b-people.json'));
+  const synthesisResult = await readJsonFile<SynthesisResult>(join(rawDir, 'synthesis.json'));
+  const codeReconstruction = await readJsonFile<CodeReconstruction>(join(rawDir, 'pass3a.json'));
+
+  // Discover segments by checking for pass1 files
+  const segmentIndices: number[] = [];
+  for (let n = 0; n < 1000; n++) {
+    const p1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
+    const p2 = await readJsonFile<Pass2Result>(join(rawDir, `pass2-seg${n}.json`));
+    if (p1 == null && p2 == null) break;
+    segmentIndices.push(n);
+  }
+
+  const segments = await Promise.all(
+    segmentIndices.map(async (n) => {
+      const pass1 = await readJsonFile<Pass1Result>(join(rawDir, `pass1-seg${n}.json`));
+      const pass2 = await readJsonFile<Pass2Result>(join(rawDir, `pass2-seg${n}.json`));
+      const pass3c = await readJsonFile<ChatExtraction>(join(rawDir, `pass3c-seg${n}.json`));
+      const pass3d = await readJsonFile<ImplicitSignals>(join(rawDir, `pass3d-seg${n}.json`));
+      return { index: n, pass1, pass2, pass3c, pass3d };
+    }),
+  );
+
+  const pipelineResult: PipelineResult = {
+    segments,
+    passesRun: metadata?.passesRun ?? [],
+    errors: metadata?.errors ?? [],
+    videoProfile: videoProfile ?? undefined,
+    peopleExtraction: peopleExtraction ?? undefined,
+    synthesisResult: synthesisResult ?? undefined,
+    codeReconstruction: codeReconstruction ?? undefined,
+  };
+
+  // Helper: write a file and record it
+  async function writeOutputFile(filename: string, content: string): Promise<void> {
+    const fullPath = join(outputDir, filename);
+    const dir = dirname(fullPath);
+    if (dir !== outputDir) {
+      await mkdir(dir, { recursive: true });
+    }
+    await writeFile(fullPath, content, 'utf8');
+    filesWritten.push(filename);
+  }
+
+  // Re-render each file that was originally generated (skip raw/ files)
+  const filesToReRender = new Set(filesGenerated.filter((f) => !f.startsWith('raw/')));
+
+  if (filesToReRender.has('transcript.md')) {
+    try {
+      const content = writeTranscript({ pipelineResult, speakerMapping });
+      await writeOutputFile('transcript.md', content);
+    } catch (err) {
+      errors.push(`transcript.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('notes.md')) {
+    try {
+      const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, speakerMapping });
+      if (content != null) await writeOutputFile('notes.md', content);
+    } catch (err) {
+      errors.push(`notes.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('people.md')) {
+    try {
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping });
+      if (content != null) await writeOutputFile('people.md', content);
+    } catch (err) {
+      errors.push(`people.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('chat.md')) {
+    try {
+      const content = writeChat({ segments: pipelineResult.segments, speakerMapping });
+      if (content != null) await writeOutputFile('chat.md', content);
+    } catch (err) {
+      errors.push(`chat.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('action-items.md')) {
+    try {
+      const content = writeActionItems({
+        segments: pipelineResult.segments,
+        synthesisResult: pipelineResult.synthesisResult,
+        speakerMapping,
+      });
+      if (content != null) await writeOutputFile('action-items.md', content);
+    } catch (err) {
+      errors.push(`action-items.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('insights.md')) {
+    try {
+      const content = writeInsights({ segments: pipelineResult.segments, speakerMapping });
+      if (content != null) await writeOutputFile('insights.md', content);
+    } catch (err) {
+      errors.push(`insights.md: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('timeline.html')) {
+    try {
+      const content = generateTimeline({ pipelineResult, duration, speakerMapping });
+      await writeOutputFile('timeline.html', content);
+    } catch (err) {
+      errors.push(`timeline.html: ${String(err)}`);
+    }
+  }
+
+  if (filesToReRender.has('guide.md')) {
+    try {
+      const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping });
+      await writeOutputFile('guide.md', content);
+    } catch (err) {
+      errors.push(`guide.md: ${String(err)}`);
+    }
+  }
+
+  // Re-write metadata.json with updated speakerMapping
+  try {
+    const content = writeMetadata({
+      title: videoTitle,
+      source,
+      duration,
+      model,
+      processingTimeMs,
+      filesGenerated,
+      pipelineResult,
+      speakerMapping,
+    });
+    await writeOutputFile('metadata.json', content);
+  } catch (err) {
+    errors.push(`metadata.json: ${String(err)}`);
+  }
+
+  return {
+    outputDir,
+    filesGenerated: filesWritten,
     errors,
   };
 }
