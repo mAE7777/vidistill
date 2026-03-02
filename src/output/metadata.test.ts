@@ -92,6 +92,7 @@ const SYNTHESIS: SynthesisResult = {
   suggestions: [],
   topics: [],
   files_to_generate: [],
+  prerequisites: [],
 };
 
 // ── writeMetadata ─────────────────────────────────────────────────────────────

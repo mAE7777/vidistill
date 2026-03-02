@@ -28,6 +28,7 @@ const FULL_SYNTHESIS: SynthesisResult = {
     },
   ],
   files_to_generate: [],
+  prerequisites: [],
 };
 
 describe('writeNotes', () => {
@@ -49,6 +50,7 @@ describe('writeNotes', () => {
       suggestions: [],
       topics: [],
       files_to_generate: [],
+      prerequisites: [],
     };
     expect(writeNotes({ synthesisResult: empty })).toBeNull();
   });

@@ -140,6 +140,7 @@ function makeSynthesisResult(): SynthesisResult {
     suggestions: [],
     topics: [],
     files_to_generate: ['README.md'],
+    prerequisites: [],
   };
 }
 

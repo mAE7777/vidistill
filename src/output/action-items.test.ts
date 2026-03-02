@@ -17,6 +17,7 @@ const SYNTHESIS_WITH_ITEMS: SynthesisResult = {
   questions_raised: [],
   suggestions: [],
   topics: [],
+  prerequisites: [],
   files_to_generate: [],
 };
 

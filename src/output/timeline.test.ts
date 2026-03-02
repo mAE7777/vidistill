@@ -75,6 +75,7 @@ function makeFullPipeline(): PipelineResult {
         { title: 'Q&A', timestamps: ['00:01:20'], summary: 'Questions from audience.', key_points: [] },
       ],
       files_to_generate: [],
+      prerequisites: [],
     },
   };
 }

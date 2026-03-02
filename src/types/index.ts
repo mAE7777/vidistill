@@ -210,7 +210,7 @@ export interface SynthesisResult {
   suggestions: string[];
   topics: MeetingNotesTopic[];
   files_to_generate: string[];
-  prerequisites?: PrerequisiteConcept[];
+  prerequisites: PrerequisiteConcept[];
 }
 
 export interface PipelineConfig {

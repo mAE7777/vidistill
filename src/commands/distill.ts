@@ -3,7 +3,6 @@ import pc from 'picocolors';
 import { basename, extname, resolve, join } from 'path';
 import { existsSync, openSync, readSync, closeSync } from 'fs';
 import { readFile, writeFile, rm, mkdir } from 'fs/promises';
-import { createRequire } from 'module';
 import { showConfigBox } from '../cli/ui.js';
 import { promptVideoSource, promptContext, promptConfirmation } from '../cli/prompts.js';
 import { resolveApiKey } from '../cli/config.js';
@@ -18,10 +17,10 @@ import { runPipeline } from '../core/pipeline.js';
 import { generateOutput, slugify } from '../output/generator.js';
 import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
+import { determineStrategy } from '../core/strategy.js';
 import type { ProgressFile, VideoProfile, PassStrategy } from '../types/index.js';
 
-const require = createRequire(import.meta.url);
-const pkg = require('../../package.json') as { version: string };
+declare const VIDISTILL_VERSION: string;
 
 const PROGRESS_SCHEMA_VERSION = 1;
 
@@ -70,7 +69,7 @@ function peekIsAudio(filePath: string): boolean {
  */
 function parseSemver(version: string): [number, number, number] {
   const parts = version.split('.').map(Number);
-  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
 }
 
 /**
@@ -130,7 +129,9 @@ async function loadPreloadedResults(outputDir: string, completedPasses: Record<s
     const rawPath = join(outputDir, 'raw', `${rawFile}.json`);
     try {
       const content = await readFile(rawPath, 'utf8');
-      preloaded[passKey] = JSON.parse(content) as unknown;
+      const parsed: unknown = JSON.parse(content);
+      if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      preloaded[passKey] = parsed;
     } catch {
       // skip files that can't be loaded
     }
@@ -259,12 +260,12 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     }
 
     // Version compatibility check
-    const currentVer = parseSemver(pkg.version);
+    const currentVer = parseSemver(VIDISTILL_VERSION);
     const fileVer = parseSemver(progressFile.vidistillVersion);
     const sameMajorMinor = currentVer[0] === fileVer[0] && currentVer[1] === fileVer[1];
     let versionWarning: string | null = null;
     if (!sameMajorMinor) {
-      versionWarning = `Progress file was created by v${progressFile.vidistillVersion}, current is v${pkg.version}.`;
+      versionWarning = `Progress file was created by v${progressFile.vidistillVersion}, current is v${VIDISTILL_VERSION}.`;
     }
 
     // Validate raw files
@@ -338,7 +339,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   // Build progress.json state incrementally
   const progressState: ProgressFile = {
     schemaVersion: PROGRESS_SCHEMA_VERSION,
-    vidistillVersion: pkg.version,
+    vidistillVersion: VIDISTILL_VERSION,
     completedPasses: progressFile != null && preloadedResults != null
       ? { ...progressFile.completedPasses }
       : {},
@@ -374,6 +375,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
       // Update videoProfile/strategy when pass0-scene completes
       if (passKey === 'pass0-scene') {
         progressState.videoProfile = result as VideoProfile;
+        progressState.strategy = determineStrategy(result as VideoProfile);
       }
       // Write progress.json asynchronously — fire and forget; no await to avoid blocking the pipeline
       writeProgressFile(finalOutputDir, progressState).catch(() => {
