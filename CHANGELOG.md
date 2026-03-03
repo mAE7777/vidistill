@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.1] - 2026-03-02
+
+### Added
+- `rename-speakers` v2 — `--rename`, `--merge`, and `--list` flags for quick non-interactive speaker renaming and identity merging
+- Merge detection — prompts to merge similar speaker identities (e.g. "K Iphone" and "Kang") during interactive naming
+- People deduplication — merged speakers consolidate speaking segments, contributions, and contact info
+
+### Fixed
+- Speaker names now resolve across all output files via expanded mapping — handles SPEAKER_XX prefixes, parenthetical annotations, and case-insensitive detected names
+- `rename-speakers --rename` rejects flags-as-values and insufficient arguments
+- Empty/whitespace speaker names rejected during interactive rename
+- Inner quotes in speaker names properly escaped in formatted name lists
+- Unsafe `as string` casts replaced with typeof guards in speaker naming and rename flows
+- `declinedMerges` correctly passed through to people writer during output generation
+
 ## [0.4.0] - 2026-03-02
 
 ### Added
