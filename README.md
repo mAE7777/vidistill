@@ -81,7 +81,6 @@ vidistill-output/my-video/
 ├── prereqs.md         # prerequisite knowledge (when detected)
 ├── timeline.html      # interactive visual timeline
 ├── metadata.json      # processing metadata
-├── progress.json      # resume checkpoint (during processing)
 └── raw/               # raw pass outputs
 ```
 
@@ -89,9 +88,9 @@ Which files are generated depends on the video content — a coding tutorial get
 
 ### Speaker Naming
 
-When multiple speakers are detected, vidistill prompts you to assign real names after processing. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files. If duplicate names are detected, you'll be prompted to merge them.
+When multiple speakers are detected, use `rename-speakers` to assign real names. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files.
 
-To rename speakers after the fact:
+To rename speakers:
 
 ```bash
 # Interactive rename — prompts for each speaker
@@ -106,10 +105,6 @@ vidistill rename-speakers ./vidistill-output/my-meeting/ --rename "Steven Kang" 
 # Merge two speakers (e.g. same person on different devices)
 vidistill rename-speakers ./vidistill-output/my-meeting/ --merge "K Iphone" "Kristian"
 ```
-
-### Resume
-
-If a run is interrupted (Ctrl+C), progress is saved automatically. Re-running the same command detects the incomplete run and offers to resume from where it left off.
 
 ## How It Works
 

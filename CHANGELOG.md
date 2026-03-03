@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.4] - 2026-03-03
+
+### Fixed
+- README updated to remove references to deleted resume feature and post-pipeline speaker naming prompt
+
 ## [0.4.3] - 2026-03-03
 
 ### Changed
