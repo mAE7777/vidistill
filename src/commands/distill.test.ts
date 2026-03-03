@@ -183,17 +183,6 @@ describe('runDistill', () => {
   });
 
   describe('contextual tips', () => {
-    it('shows extract tip when code was reconstructed', async () => {
-      mockRunPipeline.mockResolvedValue(basePipelineResult({
-        codeReconstruction: { files: [], dependencies_mentioned: [], build_commands: [] },
-      }));
-
-      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
-
-      const infoCalls = (mockLog.info.mock.calls as string[][]).map(c => c[0]);
-      expect(infoCalls.some((c: string) => c.includes('extract code'))).toBe(true);
-    });
-
     it('shows rename-speakers tip when multiple participants', async () => {
       mockRunPipeline.mockResolvedValue(basePipelineResult({
         peopleExtraction: {
@@ -210,13 +199,11 @@ describe('runDistill', () => {
       expect(infoCalls.some((c: string) => c.includes('rename-speakers'))).toBe(true);
     });
 
-    it('prefers code tip over speakers tip', async () => {
+    it('does not show rename-speakers tip with single participant', async () => {
       mockRunPipeline.mockResolvedValue(basePipelineResult({
-        codeReconstruction: { files: [], dependencies_mentioned: [], build_commands: [] },
         peopleExtraction: {
           participants: [
             { name: 'Alice', role: 'speaker' },
-            { name: 'Bob', role: 'speaker' },
           ],
         } as PipelineResult['peopleExtraction'],
       }));
@@ -224,7 +211,6 @@ describe('runDistill', () => {
       await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
 
       const infoCalls = (mockLog.info.mock.calls as string[][]).map(c => c[0]);
-      expect(infoCalls.some((c: string) => c.includes('extract code'))).toBe(true);
       expect(infoCalls.some((c: string) => c.includes('rename-speakers'))).toBe(false);
     });
   });

@@ -263,14 +263,6 @@ export interface Segment {
   endTime: number;
 }
 
-export interface ProgressFile {
-  schemaVersion: number;
-  vidistillVersion: string;
-  completedPasses: Record<string, string>; // passKey -> raw filename (without .json)
-  videoProfile?: VideoProfile;
-  strategy?: PassStrategy;
-}
-
 export interface RunPipelineConfig {
   client: GeminiClient;
   fileUri: string;
@@ -284,9 +276,6 @@ export interface RunPipelineConfig {
   onProgress?: (status: ProgressStatus) => void;
   onWait?: (delayMs: number) => void;
   isShuttingDown?: () => boolean;
-  overrideStrategy?: PassStrategy;
-  preloadedResults?: Record<string, unknown>;
-  onPassComplete?: (passKey: string, result: unknown) => void;
 }
 
 export interface GenerateOutputParams {
