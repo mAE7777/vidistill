@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2] - 2026-03-02
+
+### Fixed
+- Resume prompt no longer hangs when progress file exists but has zero completed passes
+- Null guard on Gemini response fields (`code_blocks`, `visual_notes`) prevents crashes when API returns undefined arrays
+- Consensus loops skip entries with missing `filename` or `url` fields instead of crashing
+
 ## [0.4.1] - 2026-03-02
 
 ### Added
