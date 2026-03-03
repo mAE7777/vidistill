@@ -12,6 +12,7 @@ import { createSegmentPlan } from './segmenter.js';
 import { MODELS } from '../gemini/models.js';
 import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
+import { reconcileSpeakers } from './speaker-reconciliation.js';
 import type {
   RunPipelineConfig,
   PipelineResult,
@@ -25,6 +26,7 @@ import type {
   ImplicitSignals,
   PeopleExtraction,
   SynthesisResult,
+  CanonicalSpeaker,
 } from '../types/index.js';
 
 const RETRY_DELAYS_MS = [2000, 4000, 8000];
@@ -314,6 +316,36 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const pass1Results = results.map(r => r.pass1);
   const pass2Results = results.map(r => r.pass2);
 
+  // Reconcile speakers across segments (in-place mutation of pass1Results)
+  let canonicalSpeakers: CanonicalSpeaker[] = [];
+  try {
+    const reconciliationResult = reconcileSpeakers({ pass1Results });
+    canonicalSpeakers = reconciliationResult.canonicalSpeakers;
+    const { mapping } = reconciliationResult;
+
+    for (let segIdx = 0; segIdx < pass1Results.length; segIdx++) {
+      const r = pass1Results[segIdx];
+      if (r == null) continue;
+
+      for (const entry of r.transcript_entries ?? []) {
+        if (entry.speaker) {
+          const canonical = mapping[`${segIdx}:${entry.speaker}`];
+          if (canonical !== undefined) entry.speaker = canonical;
+        }
+      }
+
+      for (const entry of r.speaker_summary ?? []) {
+        if (entry.speaker_id) {
+          const canonical = mapping[`${segIdx}:${entry.speaker_id}`];
+          if (canonical !== undefined) entry.speaker_id = canonical;
+        }
+      }
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log.warn(`speaker reconciliation failed, continuing with original labels: ${msg}`);
+  }
+
   // Pass 3b: People extraction (once, whole video)
   let peopleExtraction: PeopleExtraction | null = null;
   if (strategy.passes.includes('people')) {
@@ -330,6 +362,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
               model: MODELS.flash,
               pass1Results,
               lang,
+              canonicalSpeakers: canonicalSpeakers.map(s => s.label),
             }),
           { onWait },
         ),

@@ -17,6 +17,7 @@ vi.mock('./strategy.js', () => ({ determineStrategy: vi.fn() }));
 vi.mock('./segmenter.js', () => ({ createSegmentPlan: vi.fn() }));
 vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn(), runLinkConsensus: vi.fn() }));
 vi.mock('./validator.js', () => ({ validateCodeReconstruction: vi.fn() }));
+vi.mock('./speaker-reconciliation.js', () => ({ reconcileSpeakers: vi.fn() }));
 
 import { runTranscript } from '../passes/transcript.js';
 import { runVisual } from '../passes/visual.js';
@@ -32,6 +33,8 @@ import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import type { ConsensusResult, LinkConsensusResult } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
 import type { ValidationResult } from './validator.js';
+import { reconcileSpeakers } from './speaker-reconciliation.js';
+import type { ReconciliationResult } from '../types/index.js';
 
 const mockRunTranscript = vi.mocked(runTranscript);
 const mockRunVisual = vi.mocked(runVisual);
@@ -46,6 +49,7 @@ const mockCreateSegmentPlan = vi.mocked(createSegmentPlan);
 const mockRunCodeConsensus = vi.mocked(runCodeConsensus);
 const mockRunLinkConsensus = vi.mocked(runLinkConsensus);
 const mockValidateCodeReconstruction = vi.mocked(validateCodeReconstruction);
+const mockReconcileSpeakers = vi.mocked(reconcileSpeakers);
 
 const MOCK_PROFILE: VideoProfile = {
   type: 'coding',
@@ -198,6 +202,8 @@ describe('runPipeline', () => {
       segments: SEGMENTS,
       resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
     });
+    // Default: identity reconciliation (empty mapping, no canonical speakers)
+    mockReconcileSpeakers.mockReturnValue({ mapping: {}, canonicalSpeakers: [] });
   });
 
   it('runs Pass 0 first before any segment passes', async () => {
@@ -1169,5 +1175,217 @@ describe('runPipeline', () => {
     expect(summaryCall).toBeUndefined();
 
     logInfoSpy.mockRestore();
+  });
+
+  // --- Speaker reconciliation integration tests ---
+
+  it('reconcileSpeakers is called with all pass1Results before people extraction', async () => {
+    const peopleStrategy: PassStrategy = {
+      passes: ['transcript', 'visual', 'people'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(peopleStrategy);
+
+    for (let i = 0; i < 3; i++) {
+      mockRunTranscript.mockResolvedValueOnce(makePass1(i));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+    mockRunPeopleExtraction.mockResolvedValue(makePeopleExtraction());
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(mockReconcileSpeakers).toHaveBeenCalledTimes(1);
+    const reconcileArgs = mockReconcileSpeakers.mock.calls[0][0];
+    expect(reconcileArgs.pass1Results).toHaveLength(3);
+
+    // Reconciliation must happen before people extraction
+    const reconcileOrder = mockReconcileSpeakers.mock.invocationCallOrder[0];
+    const peopleOrder = mockRunPeopleExtraction.mock.invocationCallOrder[0];
+    expect(reconcileOrder).toBeLessThan(peopleOrder);
+  });
+
+  it('reconciliation mapping is applied in-place to transcript_entries speaker fields', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: [{ index: 0, startTime: 0, endTime: 600 }, { index: 1, startTime: 600, endTime: 1200 }],
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+
+    const pass1Seg0: Pass1Result = {
+      segment_index: 0,
+      time_range: '0s - 600s',
+      transcript_entries: [{ timestamp: '00:00:01', speaker: 'SPEAKER_00', text: 'hi', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'Host' }],
+    };
+    const pass1Seg1: Pass1Result = {
+      segment_index: 1,
+      time_range: '600s - 1200s',
+      transcript_entries: [{ timestamp: '00:10:01', speaker: 'SPEAKER_00 (Alice)', text: 'hello', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00 (Alice)', description: 'Alice' }],
+    };
+    mockRunTranscript.mockResolvedValueOnce(pass1Seg0);
+    mockRunTranscript.mockResolvedValueOnce(pass1Seg1);
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+    mockRunVisual.mockResolvedValueOnce(makePass2(1));
+
+    const mapping: Record<string, string> = {
+      '0:SPEAKER_00': 'SPEAKER_00',
+      '1:SPEAKER_00 (Alice)': 'SPEAKER_00 (Alice)',
+    };
+    const reconciliationResult: ReconciliationResult = {
+      mapping,
+      canonicalSpeakers: [
+        { label: 'SPEAKER_00', descriptions: ['Host'] },
+        { label: 'SPEAKER_00 (Alice)', descriptions: ['Alice'] },
+      ],
+    };
+    mockReconcileSpeakers.mockReturnValue(reconciliationResult);
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.segments[0].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00');
+    expect(result.segments[1].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00 (Alice)');
+  });
+
+  it('reconciliation mapping is applied in-place to speaker_summary speaker_id fields', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: [{ index: 0, startTime: 0, endTime: 600 }, { index: 1, startTime: 600, endTime: 1200 }],
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+
+    const pass1Seg0: Pass1Result = {
+      segment_index: 0,
+      time_range: '0s - 600s',
+      transcript_entries: [{ timestamp: '00:00:01', speaker: 'SPEAKER_00', text: 'hi', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'seg0 speaker' }],
+    };
+    const pass1Seg1: Pass1Result = {
+      segment_index: 1,
+      time_range: '600s - 1200s',
+      transcript_entries: [{ timestamp: '00:10:01', speaker: 'SPEAKER_00', text: 'hello', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'seg1 speaker' }],
+    };
+    mockRunTranscript.mockResolvedValueOnce(pass1Seg0);
+    mockRunTranscript.mockResolvedValueOnce(pass1Seg1);
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+    mockRunVisual.mockResolvedValueOnce(makePass2(1));
+
+    // seg0 SPEAKER_00 → SPEAKER_00, seg1 SPEAKER_00 → SPEAKER_01 (different person)
+    const mapping: Record<string, string> = {
+      '0:SPEAKER_00': 'SPEAKER_00',
+      '1:SPEAKER_00': 'SPEAKER_01',
+    };
+    mockReconcileSpeakers.mockReturnValue({
+      mapping,
+      canonicalSpeakers: [
+        { label: 'SPEAKER_00', descriptions: ['seg0 speaker'] },
+        { label: 'SPEAKER_01', descriptions: ['seg1 speaker'] },
+      ],
+    });
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.segments[0].pass1?.speaker_summary[0].speaker_id).toBe('SPEAKER_00');
+    expect(result.segments[1].pass1?.speaker_summary[0].speaker_id).toBe('SPEAKER_01');
+    // transcript_entries also updated
+    expect(result.segments[0].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00');
+    expect(result.segments[1].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_01');
+  });
+
+  it('single-segment video: reconcileSpeakers is called and pass1Results unchanged (identity)', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: [{ index: 0, startTime: 0, endTime: 600 }],
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+
+    const pass1: Pass1Result = {
+      segment_index: 0,
+      time_range: '0s - 600s',
+      transcript_entries: [{ timestamp: '00:00:01', speaker: 'SPEAKER_00', text: 'hi', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'Main' }],
+    };
+    mockRunTranscript.mockResolvedValueOnce(pass1);
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+    // Identity mapping: canonical label equals original label
+    mockReconcileSpeakers.mockReturnValue({
+      mapping: { '0:SPEAKER_00': 'SPEAKER_00' },
+      canonicalSpeakers: [{ label: 'SPEAKER_00', descriptions: ['Main'] }],
+    });
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mockReconcileSpeakers).toHaveBeenCalledTimes(1);
+    expect(result.segments[0].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00');
+    expect(result.segments[0].pass1?.speaker_summary[0].speaker_id).toBe('SPEAKER_00');
+  });
+
+  it('reconciliation failure logs warning and pipeline continues with original labels', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: [{ index: 0, startTime: 0, endTime: 600 }],
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+
+    const pass1: Pass1Result = {
+      segment_index: 0,
+      time_range: '0s - 600s',
+      transcript_entries: [{ timestamp: '00:00:01', speaker: 'SPEAKER_00', text: 'hi', tone: 'neutral' }],
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'Main' }],
+    };
+    mockRunTranscript.mockResolvedValueOnce(pass1);
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+    mockReconcileSpeakers.mockImplementation(() => {
+      throw new Error('reconciliation exploded');
+    });
+
+    const { log } = await import('@clack/prompts');
+    const logWarnSpy = vi.spyOn(log, 'warn');
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    // Pipeline did not abort
+    expect(result.segments).toHaveLength(1);
+    // Original labels preserved
+    expect(result.segments[0].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00');
+    expect(result.segments[0].pass1?.speaker_summary[0].speaker_id).toBe('SPEAKER_00');
+    // Warning was logged
+    expect(logWarnSpy).toHaveBeenCalledWith(expect.stringContaining('reconciliation exploded'));
+
+    logWarnSpy.mockRestore();
   });
 });

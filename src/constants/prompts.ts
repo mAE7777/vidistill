@@ -150,6 +150,7 @@ CRITICAL RULES:
 8. NEVER guess or infer a name that was not clearly stated or shown. Use "Unknown Participant" with a description if the person cannot be identified.
 9. NEVER merge two people just because they have the same role — if two engineers speak, they are two separate participants.
 10. If a person's role or organization cannot be determined, use empty string — do not guess.
+11. Only identify participants who spoke during the meeting. Do not extract names from GitHub pages, Zoom participant lists, slides, or other visual elements unless that person also spoke.
 
 COMPLETENESS TARGET:
 - Every speaker label (SPEAKER_00, SPEAKER_01, etc.) from the transcript must map to at least one participant entry

@@ -203,7 +203,7 @@ describe('runPeopleExtraction', () => {
     expect(call.model).toBe('gemini-3-flash-preview');
     expect(call.config.responseMimeType).toBe('application/json');
     expect(call.config.maxOutputTokens).toBe(65536);
-    expect(call.config.temperature).toBe(0.0);
+    expect(call.config.temperature).toBe(1.0);
   });
 
   it('propagates errors thrown by client.generate', async () => {
@@ -235,5 +235,54 @@ describe('runPeopleExtraction', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const textPart = call.contents[0].parts[1].text as string;
     expect(textPart).toMatch(/^Analyze the entire video\./);
+  });
+
+  it('injects CONFIRMED SPEAKERS when canonicalSpeakers is provided', async () => {
+    const client = makeClient(VALID_RESULT);
+    await runPeopleExtraction({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      model: 'gemini-3-flash-preview',
+      pass1Results: [],
+      canonicalSpeakers: ['SPEAKER_00 (Eugene)', 'SPEAKER_01 (Bob)'],
+    });
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const textPart = call.contents[0].parts[1].text as string;
+    expect(textPart).toContain(
+      'CONFIRMED SPEAKERS: SPEAKER_00 (Eugene), SPEAKER_01 (Bob). Extract details about these speakers only.',
+    );
+  });
+
+  it('does not include CONFIRMED SPEAKERS when canonicalSpeakers is undefined', async () => {
+    const client = makeClient(VALID_RESULT);
+    await runPeopleExtraction({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      model: 'gemini-3-flash-preview',
+      pass1Results: [],
+    });
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const textPart = call.contents[0].parts[1].text as string;
+    expect(textPart).not.toContain('CONFIRMED SPEAKERS');
+  });
+
+  it('does not include CONFIRMED SPEAKERS when canonicalSpeakers is empty array', async () => {
+    const client = makeClient(VALID_RESULT);
+    await runPeopleExtraction({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      model: 'gemini-3-flash-preview',
+      pass1Results: [],
+      canonicalSpeakers: [],
+    });
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const textPart = call.contents[0].parts[1].text as string;
+    expect(textPart).not.toContain('CONFIRMED SPEAKERS');
   });
 });

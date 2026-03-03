@@ -10,10 +10,11 @@ export interface RunPeopleExtractionParams {
   model: string;
   pass1Results: (Pass1Result | null)[];
   lang?: string;
+  canonicalSpeakers?: string[];
 }
 
 export async function runPeopleExtraction(params: RunPeopleExtractionParams): Promise<PeopleExtraction> {
-  const { client, fileUri, mimeType, model, pass1Results, lang } = params;
+  const { client, fileUri, mimeType, model, pass1Results, lang, canonicalSpeakers } = params;
 
   const hasAnyTranscript = pass1Results.some((r) => r != null);
 
@@ -28,12 +29,17 @@ export async function runPeopleExtraction(params: RunPeopleExtractionParams): Pr
 
   const transcriptContext = `TRANSCRIPT FROM ALL SEGMENTS:\n${transcriptText}`;
 
+  const speakerConstraint =
+    canonicalSpeakers && canonicalSpeakers.length > 0
+      ? `CONFIRMED SPEAKERS: ${canonicalSpeakers.join(', ')}. Extract details about these speakers only.\n\n`
+      : '';
+
   const contents = [
     {
       role: 'user' as const,
       parts: [
         { fileData: { fileUri, mimeType } },
-        { text: `Analyze the entire video. ${transcriptContext}` },
+        { text: `Analyze the entire video. ${speakerConstraint}${transcriptContext}` },
       ],
     },
   ];
@@ -46,7 +52,7 @@ export async function runPeopleExtraction(params: RunPeopleExtractionParams): Pr
       responseSchema: SCHEMA_PASS_3B,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,
-      temperature: 0.0,
+      temperature: 1.0,
     },
   });
 

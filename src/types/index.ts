@@ -303,3 +303,21 @@ export interface OutputResult {
 }
 
 export type SpeakerMapping = Record<string, string>;
+
+export interface CanonicalSpeaker {
+  /** Canonical label, e.g. "SPEAKER_00 (Alice)" or "SPEAKER_02" */
+  label: string;
+  /** Descriptions collected from speaker_summary entries across all segments */
+  descriptions: string[];
+}
+
+export interface ReconciliationResult {
+  /**
+   * Maps each original per-segment speaker label to its canonical label.
+   * Key format: `${segmentIndex}:${originalLabel}` (e.g. "0:SPEAKER_00 (Eugene)").
+   * Value: canonical label (e.g. "SPEAKER_00 (Eugene)").
+   */
+  mapping: Record<string, string>;
+  /** Ordered list of canonical speakers, by first appearance. */
+  canonicalSpeakers: CanonicalSpeaker[];
+}
