@@ -87,7 +87,7 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
 }
 
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
-  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, speakerMapping } = params;
+  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, speakerMapping, declinedMerges } = params;
 
   const slug = slugify(videoTitle);
   const finalOutputDir = join(outputDir, slug);
@@ -173,7 +173,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2e: people.md — conditional
   if (filesToGenerate.has('people.md')) {
     try {
-      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping });
+      const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping, declinedMerges });
       if (content != null) {
         await writeOutputFile('people.md', content);
       }

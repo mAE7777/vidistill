@@ -163,12 +163,12 @@ async function promptForSpeakers(speakers: SpeakerContext[]): Promise<SpeakerMap
       placeholder: 'Enter name or press Enter to skip',
     });
 
-    if (isCancel(value)) {
+    if (isCancel(value) || typeof value !== 'string') {
       cancel('Speaker naming cancelled.');
       return null;
     }
 
-    const trimmed = (value as string).trim();
+    const trimmed = value.trim();
     if (trimmed.length > 0) {
       mapping[speaker.label] = trimmed;
     }

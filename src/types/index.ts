@@ -298,6 +298,7 @@ export interface GenerateOutputParams {
   model: string;
   processingTimeMs: number;
   speakerMapping?: SpeakerMapping;
+  declinedMerges?: [string, string][];
 }
 
 export interface ReRenderWithSpeakerMappingParams {

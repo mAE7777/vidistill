@@ -63,6 +63,7 @@ function mergeParticipants(mapped_name: string, group: Participant[]): Participa
   const contributions: string[] = [];
   const seenContributions = new Set<string>();
   const speaking_segments: string[] = [];
+  const seenSegments = new Set<string>();
   const contact_info: string[] = [];
   const seenContactInfo = new Set<string>();
   let role = '';
@@ -76,7 +77,10 @@ function mergeParticipants(mapped_name: string, group: Participant[]): Participa
       }
     }
     for (const s of p.speaking_segments) {
-      speaking_segments.push(s);
+      if (!seenSegments.has(s)) {
+        seenSegments.add(s);
+        speaking_segments.push(s);
+      }
     }
     for (const ci of p.contact_info) {
       if (!seenContactInfo.has(ci)) {

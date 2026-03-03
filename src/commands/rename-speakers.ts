@@ -119,6 +119,7 @@ function parseArgs(args: string[]): {
   list: boolean;
   rename: [string, string] | null;
   merge: [string, string] | null;
+  error: string | null;
 } {
   let outputDir: string | null = null;
   let list = false;
@@ -136,23 +137,31 @@ function parseArgs(args: string[]): {
     } else if (arg === '--rename') {
       const a = args[i + 1];
       const b = args[i + 2];
-      if (a != null && b != null) {
-        rename = [a, b];
-        consumed.add(i);
-        consumed.add(i + 1);
-        consumed.add(i + 2);
-        i += 2;
+      if (a == null || b == null) {
+        return { outputDir: null, list: false, rename: null, merge: null, error: '--rename requires two arguments: --rename "old name" "new name"' };
       }
+      if (a.startsWith('--') || b.startsWith('--')) {
+        return { outputDir: null, list: false, rename: null, merge: null, error: '--rename requires two arguments: --rename "old name" "new name"' };
+      }
+      rename = [a, b];
+      consumed.add(i);
+      consumed.add(i + 1);
+      consumed.add(i + 2);
+      i += 2;
     } else if (arg === '--merge') {
       const a = args[i + 1];
       const b = args[i + 2];
-      if (a != null && b != null) {
-        merge = [a, b];
-        consumed.add(i);
-        consumed.add(i + 1);
-        consumed.add(i + 2);
-        i += 2;
+      if (a == null || b == null) {
+        return { outputDir: null, list: false, rename: null, merge: null, error: '--merge requires two arguments: --merge "source" "target"' };
       }
+      if (a.startsWith('--') || b.startsWith('--')) {
+        return { outputDir: null, list: false, rename: null, merge: null, error: '--merge requires two arguments: --merge "source" "target"' };
+      }
+      merge = [a, b];
+      consumed.add(i);
+      consumed.add(i + 1);
+      consumed.add(i + 2);
+      i += 2;
     }
   }
 
@@ -164,14 +173,14 @@ function parseArgs(args: string[]): {
     }
   }
 
-  return { outputDir, list, rename, merge };
+  return { outputDir, list, rename, merge, error: null };
 }
 
 /**
  * Format a list of names for an error message (comma-separated, quoted).
  */
 function formatNameList(names: string[]): string {
-  return names.map((n) => `"${n}"`).join(', ');
+  return names.map((n) => `"${n.replace(/"/g, '\\"')}"`).join(', ');
 }
 
 /**
@@ -217,6 +226,11 @@ async function runList(outputDir: string): Promise<void> {
  * --rename "old" "new" flow.
  */
 async function runRename(outputDir: string, oldName: string, newName: string): Promise<void> {
+  if (newName.trim().length === 0) {
+    log.error('New name cannot be empty. Use the interactive prompt to clear a mapping.');
+    return;
+  }
+
   const metadataPath = join(outputDir, 'metadata.json');
   const metadata = await readJsonFile<MetadataOutput>(metadataPath);
 
@@ -383,7 +397,12 @@ function buildCurrentNames(
 }
 
 export async function run(args: string[]): Promise<void> {
-  const { outputDir, list, rename, merge } = parseArgs(args);
+  const { outputDir, list, rename, merge, error } = parseArgs(args);
+
+  if (error != null) {
+    log.error(error);
+    return;
+  }
 
   if (outputDir == null || outputDir.trim() === '') {
     log.error('Usage: vidistill rename-speakers <output-dir> [--list] [--rename "old" "new"] [--merge "source" "target"]');
@@ -478,12 +497,12 @@ export async function run(args: string[]): Promise<void> {
       defaultValue,
     });
 
-    if (isCancel(value)) {
+    if (isCancel(value) || typeof value !== 'string') {
       cancel('Speaker naming cancelled.');
       return;
     }
 
-    const trimmed = (value as string).trim();
+    const trimmed = value.trim();
 
     for (const label of labels) {
       if (trimmed.length > 0 && trimmed !== label) {
