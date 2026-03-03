@@ -51,8 +51,8 @@ function selectBestContent(
   const referenceContent: string[] = [];
   for (const p2 of pass2Results) {
     if (p2 == null) continue;
-    for (const block of p2.code_blocks) {
-      if (normalizeFilename(block.filename) === normalizedName) {
+    for (const block of p2.code_blocks ?? []) {
+      if (block.filename && normalizeFilename(block.filename) === normalizedName) {
         referenceContent.push(block.content);
       }
     }
@@ -181,6 +181,7 @@ export async function runCodeConsensus(params: {
     const seenInRun = new Set<string>();
 
     for (const file of run.files) {
+      if (!file.filename) continue;
       const normalized = normalizeFilename(file.filename);
       if (seenInRun.has(normalized)) continue;
       seenInRun.add(normalized);
@@ -306,6 +307,7 @@ export async function runLinkConsensus(params: {
   for (const run of successfulRuns) {
     const seenInRun = new Set<string>();
     for (const link of run.links ?? []) {
+      if (!link.url) continue;
       const normalized = normalizeUrl(link.url);
       if (seenInRun.has(normalized)) continue;
       seenInRun.add(normalized);

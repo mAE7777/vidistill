@@ -28,7 +28,7 @@ export async function runImplicitSignals(params: RunImplicitSignalsParams): Prom
       : '[No transcript available for this segment]';
 
   const visualNotesText =
-    pass2Result != null && pass2Result.visual_notes.length > 0
+    pass2Result != null && (pass2Result.visual_notes?.length ?? 0) > 0
       ? pass2Result.visual_notes
           .map((n) => `[${n.timestamp}] ${n.visual_type}: ${n.description}`)
           .join('\n')

@@ -46,7 +46,7 @@ function compileContext(params: RunSynthesisParams): string {
 
     // Code Blocks
     lines.push('--- Code Blocks ---');
-    if (pass2 != null && pass2.code_blocks.length > 0) {
+    if (pass2 != null && (pass2.code_blocks?.length ?? 0) > 0) {
       for (const b of pass2.code_blocks) {
         lines.push(`[${b.timestamp}] ${b.filename} (${b.language}):`);
         lines.push(b.content);
@@ -58,7 +58,7 @@ function compileContext(params: RunSynthesisParams): string {
 
     // Visual Notes
     lines.push('--- Visual Notes ---');
-    if (pass2 != null && pass2.visual_notes.length > 0) {
+    if (pass2 != null && (pass2.visual_notes?.length ?? 0) > 0) {
       for (const n of pass2.visual_notes) {
         lines.push(`[${n.timestamp}] ${n.visual_type}: ${n.description}`);
       }

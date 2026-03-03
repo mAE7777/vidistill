@@ -20,14 +20,14 @@ export async function runChatExtraction(params: RunChatExtractionParams): Promis
   const { client, fileUri, mimeType, segment, model, resolution, pass2Result, lang } = params;
 
   const visualNotesText =
-    pass2Result != null && pass2Result.visual_notes.length > 0
+    pass2Result != null && (pass2Result.visual_notes?.length ?? 0) > 0
       ? pass2Result.visual_notes
           .map((n) => `[${n.timestamp}] ${n.visual_type}: ${n.description}`)
           .join('\n')
       : '[No visual context available for this segment]';
 
   const codeBlocksText =
-    pass2Result != null && pass2Result.code_blocks.length > 0
+    pass2Result != null && (pass2Result.code_blocks?.length ?? 0) > 0
       ? pass2Result.code_blocks
           .map((b) => `[${b.timestamp}] ${b.filename} (${b.language}):\n${b.content}`)
           .join('\n\n')

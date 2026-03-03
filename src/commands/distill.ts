@@ -287,6 +287,14 @@ export async function runDistill(args: DistillArgs): Promise<void> {
       log.warn(versionWarning);
     }
 
+    // Nothing to resume from — skip prompt and go straight to fresh start
+    if (completedCount === 0) {
+      log.info('No valid passes to resume from. Starting fresh.');
+      if (existsSync(finalOutputDir)) {
+        await clearDirectory(finalOutputDir);
+      }
+    } else {
+
     const resumeChoice = await select({
       message: `Found incomplete run (${String(completedCount)} passes done). Resume?`,
       options: [
@@ -321,6 +329,8 @@ export async function runDistill(args: DistillArgs): Promise<void> {
         }
       }
     }
+
+    } // end completedCount > 0 else block
   }
 
   // Step 7: Create shutdown handler and register it before pipeline

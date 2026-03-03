@@ -31,7 +31,7 @@ export function compileContext(
   const segmentIndicesToInclude = isLongVideo
     ? new Set(
         pass2Results
-          .map((r, i) => (r != null && r.code_blocks.length > 0 ? i : -1))
+          .map((r, i) => (r != null && (r.code_blocks?.length ?? 0) > 0 ? i : -1))
           .filter((i) => i !== -1),
       )
     : null;
@@ -72,7 +72,7 @@ export function compileContext(
   const codeLines: string[] = ['CODE BLOCKS EXTRACTED (all segments):'];
   for (let i = 0; i < pass2Results.length; i++) {
     const p2 = pass2Results[i] ?? null;
-    if (p2 == null || p2.code_blocks.length === 0) continue;
+    if (p2 == null || (p2.code_blocks?.length ?? 0) === 0) continue;
 
     const p1 = pass1Results[i] ?? null;
     let header: string;
