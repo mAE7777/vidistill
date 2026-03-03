@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import type {
   GenerateOutputParams,
@@ -357,9 +357,16 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     codeReconstruction: codeReconstruction ?? undefined,
   };
 
-  // Helper: write a file and record it
+  // Helper: write a file only if content changed, and record it
   async function writeOutputFile(filename: string, content: string): Promise<void> {
     const fullPath = join(outputDir, filename);
+    // Skip write if content is unchanged
+    try {
+      const existing = await readFile(fullPath, 'utf8');
+      if (existing === content) return;
+    } catch {
+      // File doesn't exist — proceed with write
+    }
     const dir = dirname(fullPath);
     if (dir !== outputDir) {
       await mkdir(dir, { recursive: true });

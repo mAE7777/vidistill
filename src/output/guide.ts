@@ -1,4 +1,4 @@
-import { formatDuration, applySpeakerMapping } from '../lib/utils.js';
+import { formatDuration, applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
 import type { PipelineResult, VideoProfile, SynthesisResult, SpeakerMapping } from '../types/index.js';
 
 export interface WriteGuideParams {
@@ -24,11 +24,11 @@ function renderFilesTable(filesGenerated: string[] | undefined): string {
   return `| File |\n|------|\n${rows}`;
 }
 
-function renderSuggestions(synthesisResult: SynthesisResult | undefined): string {
+function renderSuggestions(synthesisResult: SynthesisResult | undefined, speakerMapping?: SpeakerMapping): string {
   if (synthesisResult == null || synthesisResult.suggestions.length === 0) {
     return '_No suggestions._';
   }
-  return synthesisResult.suggestions.map((s) => `- ${s}`).join('\n');
+  return synthesisResult.suggestions.map((s) => `- ${replaceNamesInText(s, speakerMapping)}`).join('\n');
 }
 
 function renderVideoType(profile: VideoProfile | undefined): string {
@@ -85,7 +85,8 @@ export function writeGuide(params: WriteGuideParams): string {
   const { title, source, duration, pipelineResult, filesGenerated, speakerMapping } = params;
   const { synthesisResult, videoProfile } = pipelineResult;
 
-  const overview = synthesisResult?.overview ?? '_No summary available — synthesis pass did not run or produced no output._';
+  const rawOverview = synthesisResult?.overview ?? '_No summary available — synthesis pass did not run or produced no output._';
+  const overview = replaceNamesInText(rawOverview, speakerMapping);
   const videoType = renderVideoType(videoProfile);
 
   const sections: string[] = [
@@ -107,7 +108,7 @@ export function writeGuide(params: WriteGuideParams): string {
     '',
     '## Suggestions',
     '',
-    renderSuggestions(synthesisResult),
+    renderSuggestions(synthesisResult, speakerMapping),
     '',
     '## Processing Details',
     '',

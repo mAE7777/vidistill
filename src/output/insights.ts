@@ -1,4 +1,5 @@
 import type { SegmentResult, EmotionalShift, EmphasisPattern, SpeakerMapping } from '../types/index.js';
+import { replaceNamesInText } from '../lib/utils.js';
 
 export interface WriteInsightsParams {
   segments: SegmentResult[];
@@ -45,20 +46,20 @@ function collectImplicitDecisions(segments: SegmentResult[]): string[] {
   return decisions;
 }
 
-function renderEmotionalShifts(shifts: EmotionalShift[]): string[] {
+function renderEmotionalShifts(shifts: EmotionalShift[], speakerMapping?: SpeakerMapping): string[] {
   if (shifts.length === 0) return [];
   const lines: string[] = ['## Emotional Shifts', ''];
   for (const s of shifts) {
     lines.push(`- **[${s.timestamp}]** ${s.from_state} → ${s.to_state}`);
     if (s.trigger.length > 0) {
-      lines.push(`  _Trigger: ${s.trigger}_`);
+      lines.push(`  _Trigger: ${replaceNamesInText(s.trigger, speakerMapping)}_`);
     }
   }
   lines.push('');
   return lines;
 }
 
-function renderEmphasisPatterns(patterns: EmphasisPattern[]): string[] {
+function renderEmphasisPatterns(patterns: EmphasisPattern[], speakerMapping?: SpeakerMapping): string[] {
   if (patterns.length === 0) return [];
   // Sort by most mentioned first
   const sorted = [...patterns].sort((a, b) => b.times_mentioned - a.times_mentioned);
@@ -68,35 +69,35 @@ function renderEmphasisPatterns(patterns: EmphasisPattern[]): string[] {
     lines.push(`### ${p.concept} (×${p.times_mentioned})${ts}`);
     lines.push('');
     if (p.significance.length > 0) {
-      lines.push(p.significance);
+      lines.push(replaceNamesInText(p.significance, speakerMapping));
       lines.push('');
     }
   }
   return lines;
 }
 
-function renderImplicitQuestions(questions: string[]): string[] {
+function renderImplicitQuestions(questions: string[], speakerMapping?: SpeakerMapping): string[] {
   if (questions.length === 0) return [];
   const lines: string[] = ['## Implicit Questions', ''];
   for (const q of questions) {
-    lines.push(`- ${q}`);
+    lines.push(`- ${replaceNamesInText(q, speakerMapping)}`);
   }
   lines.push('');
   return lines;
 }
 
-function renderImplicitDecisions(decisions: string[]): string[] {
+function renderImplicitDecisions(decisions: string[], speakerMapping?: SpeakerMapping): string[] {
   if (decisions.length === 0) return [];
   const lines: string[] = ['## Implicit Decisions', ''];
   for (const d of decisions) {
-    lines.push(`- ${d}`);
+    lines.push(`- ${replaceNamesInText(d, speakerMapping)}`);
   }
   lines.push('');
   return lines;
 }
 
 export function writeInsights(params: WriteInsightsParams): string | null {
-  const { segments } = params;
+  const { segments, speakerMapping } = params;
 
   const hasPass3d = segments.some((s) => s.pass3d != null);
   if (!hasPass3d) return null;
@@ -117,10 +118,10 @@ export function writeInsights(params: WriteInsightsParams): string | null {
 
   const sections: string[] = ['# Insights', ''];
 
-  sections.push(...renderEmotionalShifts(emotionalShifts));
-  sections.push(...renderEmphasisPatterns(emphasisPatterns));
-  sections.push(...renderImplicitQuestions(implicitQuestions));
-  sections.push(...renderImplicitDecisions(implicitDecisions));
+  sections.push(...renderEmotionalShifts(emotionalShifts, speakerMapping));
+  sections.push(...renderEmphasisPatterns(emphasisPatterns, speakerMapping));
+  sections.push(...renderImplicitQuestions(implicitQuestions, speakerMapping));
+  sections.push(...renderImplicitDecisions(implicitDecisions, speakerMapping));
 
   // Trim trailing blank lines
   while (sections[sections.length - 1] === '') sections.pop();

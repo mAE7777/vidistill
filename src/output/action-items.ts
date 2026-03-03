@@ -1,5 +1,5 @@
 import type { SegmentResult, SynthesisResult, MeetingNotesActionItem, TaskAssigned, SpeakerMapping } from '../types/index.js';
-import { applySpeakerMapping } from '../lib/utils.js';
+import { applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
 
 export interface WriteActionItemsParams {
   segments: SegmentResult[];
@@ -23,7 +23,7 @@ function renderSynthesisItems(items: MeetingNotesActionItem[], speakerMapping?: 
   for (const a of items) {
     const mentionedBy = applySpeakerMapping(a.mentioned_by, speakerMapping);
     const by = mentionedBy.length > 0 ? ` — _${mentionedBy}_` : '';
-    lines.push(`- [ ] **[${a.timestamp}]** ${a.item}${by}`);
+    lines.push(`- [ ] **[${a.timestamp}]** ${replaceNamesInText(a.item, speakerMapping)}${by}`);
   }
   lines.push('');
   return lines;
@@ -36,7 +36,7 @@ function renderAssignedTasks(tasks: TaskAssigned[], speakerMapping?: SpeakerMapp
     const assignee = applySpeakerMapping(t.assignee, speakerMapping);
     const assigneeStr = assignee.length > 0 ? ` → _${assignee}_` : '';
     const deadline = t.deadline.length > 0 ? ` (due: ${t.deadline})` : '';
-    lines.push(`- [ ] **[${t.timestamp}]** ${t.task}${assigneeStr}${deadline}`);
+    lines.push(`- [ ] **[${t.timestamp}]** ${replaceNamesInText(t.task, speakerMapping)}${assigneeStr}${deadline}`);
   }
   lines.push('');
   return lines;

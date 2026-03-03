@@ -71,6 +71,33 @@ import type { SegmentResult, SpeakerMapping } from '../types/index.js';
 import { readFile } from 'fs/promises';
 
 /**
+ * Replace all known speaker name variants in free text.
+ * Uses the expanded mapping to find and replace names, processing
+ * longest keys first to avoid partial matches (e.g. "Professor Eugene Callahan"
+ * before "Eugene Callahan"). Skips SPEAKER_XX labels since those don't appear
+ * in prose text.
+ */
+export function replaceNamesInText(text: string, mapping?: SpeakerMapping): string {
+  if (!mapping || text.length === 0) return text;
+
+  // Only replace entries where key !== value and key isn't a SPEAKER_XX label
+  const entries = Object.entries(mapping)
+    .filter(([key, value]) => key !== value && !/^SPEAKER_\d+$/.test(key))
+    .sort((a, b) => b[0].length - a[0].length); // longest first
+
+  if (entries.length === 0) return text;
+
+  let result = text;
+  for (const [key, value] of entries) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`\\b${escaped}\\b`, 'g');
+    result = result.replace(re, value);
+  }
+
+  return result;
+}
+
+/**
  * Build an expanded speaker mapping that includes detected-name keys
  * in addition to SPEAKER_XX keys from the user's mapping.
  *

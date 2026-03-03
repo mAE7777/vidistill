@@ -1,5 +1,5 @@
 import type { PeopleExtraction, Participant, SpeakerMapping } from '../types/index.js';
-import { applySpeakerMapping } from '../lib/utils.js';
+import { applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
 
 export interface WritePeopleParams {
   peopleExtraction: PeopleExtraction | null | undefined;
@@ -7,7 +7,7 @@ export interface WritePeopleParams {
   declinedMerges?: [string, string][];
 }
 
-function renderParticipant(p: Participant, index: number): string[] {
+function renderParticipant(p: Participant, index: number, speakerMapping?: SpeakerMapping): string[] {
   const lines: string[] = [];
   lines.push(`## ${index + 1}. ${p.name}`);
   lines.push('');
@@ -24,7 +24,7 @@ function renderParticipant(p: Participant, index: number): string[] {
     lines.push('**Contributions:**');
     lines.push('');
     for (const c of p.contributions) {
-      lines.push(`- ${c}`);
+      lines.push(`- ${replaceNamesInText(c, speakerMapping)}`);
     }
     lines.push('');
   }
@@ -181,14 +181,14 @@ export function writePeople(params: WritePeopleParams): string | null {
   for (let i = 0; i < participants.length; i++) {
     const p = participants[i];
     if (p != null) {
-      sections.push(...renderParticipant(p, i));
+      sections.push(...renderParticipant(p, i, speakerMapping));
     }
   }
 
   if (peopleExtraction.relationships.length > 0) {
     sections.push('## Relationships', '');
     for (const r of peopleExtraction.relationships) {
-      sections.push(`- ${r}`);
+      sections.push(`- ${replaceNamesInText(r, speakerMapping)}`);
     }
     sections.push('');
   }
