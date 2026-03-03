@@ -1,4 +1,3 @@
-import { log } from '@clack/prompts';
 import type { CodeFile, CodeReconstruction, Pass2Result, CodeChange, ChatExtraction, ExtractedLink } from '../types/index.js';
 import { normalizeFilename } from '../lib/utils.js';
 
@@ -135,9 +134,8 @@ export async function runCodeConsensus(params: {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn(`consensus run ${i + 1}/${runs} failed: ${msg}`);
+    } catch {
+      // Individual run failures are expected — consensus only needs minAgreement runs to succeed
     }
     onProgress?.(i + 1, runs);
   }
@@ -278,9 +276,8 @@ export async function runLinkConsensus(params: {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn(`link consensus run ${i + 1}/${runs} failed: ${msg}`);
+    } catch {
+      // Individual run failures are expected — consensus only needs minAgreement runs to succeed
     }
     onProgress?.(i + 1, runs);
   }
