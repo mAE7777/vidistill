@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.3] - 2026-03-03
+
+### Changed
+- Consensus run failure messages no longer clutter user output — only final summary logged on total failure
+
+### Removed
+- Resume feature — progress file detection and resume prompt removed from pipeline
+- Post-pipeline speaker naming prompt — use `vidistill rename-speakers` instead
+- Extract tip from completion output (extract command was removed in 0.4.0)
+
 ## [0.4.2] - 2026-03-02
 
 ### Fixed
