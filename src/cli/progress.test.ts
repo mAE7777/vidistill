@@ -44,6 +44,14 @@ describe('PHASE_LABELS', () => {
     expect(PHASE_LABELS.pass1).toBe('Extracting transcript...');
   });
 
+  it('has correct label for pass1a', () => {
+    expect(PHASE_LABELS.pass1a).toBe('Transcribing...');
+  });
+
+  it('has correct label for pass1b', () => {
+    expect(PHASE_LABELS.pass1b).toBe('Identifying speakers...');
+  });
+
   it('has correct label for pass2', () => {
     expect(PHASE_LABELS.pass2).toBe('Analyzing visuals...');
   });

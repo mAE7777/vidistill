@@ -112,15 +112,16 @@ Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Support
 
 1. **Input** — accepts YouTube URL directly or reads local file (video or audio), compresses if over 2GB
 2. **Pass 0** — scene analysis to classify video type and determine processing strategy
-3. **Pass 1** — transcript extraction with speaker identification (speakers reconciled across segments)
-4. **Pass 2** — visual content extraction (screen states, diagrams, slides)
-5. **Pass 3** — specialist passes based on video type:
+3. **Pass 1a** — pure verbatim transcription (timestamps, tone, emphasis — no speaker labels)
+4. **Pass 1b** — speaker diarization (assigns SPEAKER_XX labels to transcript entries using voice and visual cues, then merged with 1a)
+5. **Pass 2** — visual content extraction (screen states, diagrams, slides)
+6. **Pass 3** — specialist passes based on video type:
    - 3c: chat and links (live streams) — per segment, runs 3x with consensus voting
    - 3d: implicit signals (all types) — per segment
    - 3b: people and social dynamics (meetings) — whole video, anchored to transcript speakers
    - 3a: code reconstruction (coding videos) — whole video, runs 3x with consensus voting and validation
-6. **Synthesis** — cross-references all passes into unified analysis
-7. **Output** — generates structured markdown files
+7. **Synthesis** — cross-references all passes into unified analysis
+8. **Output** — generates structured markdown files
 
 Audio files skip visual passes and go straight to transcript, people, implicit signals, and synthesis.
 

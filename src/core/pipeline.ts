@@ -1,5 +1,7 @@
 import { log } from '@clack/prompts';
-import { runTranscript } from '../passes/transcript.js';
+import { runTranscription } from '../passes/transcription.js';
+import { runDiarization } from '../passes/diarization.js';
+import { mergeTranscriptResults } from '../passes/transcript-merge.js';
 import { runVisual } from '../passes/visual.js';
 import { runSceneAnalysis } from '../passes/scene-analysis.js';
 import { runCodeReconstruction } from '../passes/code.js';
@@ -126,7 +128,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   // Calculate total steps for progress tracking
   const linkConsensusRuns = 3;
   const callsPerSegment =
-    2 +
+    3 +
     (strategy.passes.includes('chat') ? linkConsensusRuns : 0) +
     (strategy.passes.includes('implicit') ? 1 : 0);
   const postSegmentCalls =
@@ -155,25 +157,51 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
     const segment = segments[i];
 
-    // Pass 1: Transcript
-    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'running', totalSteps });
+    // Phase 1a: Transcription
+    onProgress?.({ phase: 'pass1a', segment: i, totalSegments: n, status: 'running', totalSteps });
 
-    let pass1: Pass1Result | null = null;
-    const pass1Attempt = await withRetry(
-      () => rateLimiter.execute(() => runTranscript({ client, fileUri, mimeType, segment, model, resolution, lang }), { onWait }),
-      `segment ${i} pass1`,
+    const pass1aAttempt = await withRetry(
+      () => rateLimiter.execute(() => runTranscription({ client, fileUri, mimeType, segment, model, resolution, lang }), { onWait }),
+      `segment ${i} pass1a`,
     );
 
-    if (pass1Attempt.error !== null) {
-      log.warn(pass1Attempt.error);
-      errors.push(pass1Attempt.error);
-    } else {
-      pass1 = pass1Attempt.result;
-      pass1RanOnce = true;
+    let pass1aResult = pass1aAttempt.error !== null ? null : pass1aAttempt.result;
+    if (pass1aAttempt.error !== null) {
+      log.warn(pass1aAttempt.error);
+      errors.push(pass1aAttempt.error);
     }
 
     currentStep++;
-    onProgress?.({ phase: 'pass1', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+    onProgress?.({ phase: 'pass1a', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+
+    // Phase 1b: Diarization (only if 1a succeeded)
+    let pass1: Pass1Result | null = null;
+    if (pass1aResult != null) {
+      onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'running', totalSteps });
+
+      const p1a = pass1aResult;
+      const pass1bAttempt = await withRetry(
+        () => rateLimiter.execute(() => runDiarization({ client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult: p1a }), { onWait }),
+        `segment ${i} pass1b`,
+      );
+
+      if (pass1bAttempt.error !== null) {
+        log.warn(pass1bAttempt.error);
+        errors.push(pass1bAttempt.error);
+        // Graceful degradation: transcript without speakers
+        pass1 = mergeTranscriptResults(pass1aResult, { speaker_assignments: [], speaker_summary: [] });
+      } else if (pass1bAttempt.result != null) {
+        pass1 = mergeTranscriptResults(pass1aResult, pass1bAttempt.result);
+      }
+
+      currentStep++;
+      onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+      pass1RanOnce = true;
+    } else {
+      // 1a failed — skip 1b, increment step counter to keep progress accurate
+      currentStep++;
+      onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+    }
 
     // Pass 2: Visual
     onProgress?.({ phase: 'pass2', segment: i, totalSegments: n, status: 'running', totalSteps });

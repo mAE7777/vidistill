@@ -114,6 +114,64 @@ export const SCHEMA_PASS_1: Schema = {
   required: ["segment_index", "time_range", "transcript_entries"]
 };
 
+export const SCHEMA_PASS_1A: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    segment_index: { type: Type.INTEGER, description: "0-based segment index" },
+    time_range: { type: Type.STRING, description: "Format: HH:MM:SS - HH:MM:SS" },
+    transcript_entries: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          timestamp: { type: Type.STRING, description: "HH:MM:SS format" },
+          text: { type: Type.STRING, description: "Complete spoken text, verbatim" },
+          tone: {
+            type: Type.STRING,
+            enum: ["neutral", "emphatic", "questioning", "warning", "excited", "humorous", "frustrated", "instructional", "conversational"]
+          },
+          emphasis_words: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "Words spoken with notable emphasis"
+          },
+          pause_after_seconds: { type: Type.NUMBER, description: "Pause duration in seconds" }
+        },
+        required: ["timestamp", "text", "tone"]
+      }
+    },
+  },
+  required: ["segment_index", "time_range", "transcript_entries"]
+};
+
+export const SCHEMA_PASS_1B: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    speaker_assignments: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          timestamp: { type: Type.STRING, description: "HH:MM:SS matching a transcript entry" },
+          speaker: { type: Type.STRING, description: "SPEAKER_00, SPEAKER_01, etc. Optionally with name: SPEAKER_00 (Alice)" },
+        },
+        required: ["timestamp", "speaker"]
+      }
+    },
+    speaker_summary: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          speaker_id: { type: Type.STRING },
+          description: { type: Type.STRING }
+        }
+      }
+    }
+  },
+  required: ["speaker_assignments", "speaker_summary"]
+};
+
 export const SCHEMA_PASS_2: Schema = {
   type: Type.OBJECT,
   properties: {

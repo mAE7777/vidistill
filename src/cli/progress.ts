@@ -4,6 +4,8 @@ import type { ProgressStatus, PipelineResult } from '../types/index.js';
 export const PHASE_LABELS: Record<string, string> = {
   pass0: 'Understanding your video...',
   pass1: 'Extracting transcript...',
+  pass1a: 'Transcribing...',
+  pass1b: 'Identifying speakers...',
   pass2: 'Analyzing visuals...',
   pass3a: 'Reconstructing code...',
   pass3b: 'Identifying participants...',

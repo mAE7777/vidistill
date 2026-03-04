@@ -24,6 +24,30 @@ export interface Pass1Result {
   speaker_summary: SpeakerInfo[];
 }
 
+export interface Pass1aEntry {
+  timestamp: string;
+  text: string;
+  tone: string;
+  emphasis_words?: string[];
+  pause_after_seconds?: number;
+}
+
+export interface Pass1aResult {
+  segment_index: number;
+  time_range: string;
+  transcript_entries: Pass1aEntry[];
+}
+
+export interface SpeakerAssignment {
+  timestamp: string;
+  speaker: string;
+}
+
+export interface Pass1bResult {
+  speaker_assignments: SpeakerAssignment[];
+  speaker_summary: SpeakerInfo[];
+}
+
 export interface CodeBlock {
   timestamp: string;
   timestamp_end?: string;
