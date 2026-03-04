@@ -132,10 +132,15 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     const result = await handleYouTube(resolved.value, client);
     fileUri = result.fileUri;
     mimeType = result.mimeType;
-    duration = await detectDuration({
-      ytDlpDuration: result.duration,
-      geminiDuration: result.duration,
-    });
+    try {
+      duration = await detectDuration({
+        ytDlpDuration: result.duration,
+        geminiDuration: result.duration,
+      });
+    } catch {
+      // YouTube direct mode without yt-dlp: default to 600s (processes as single segment)
+      duration = 600;
+    }
     if (result.uploadedFileName != null) {
       uploadedFileNames = [result.uploadedFileName];
     }

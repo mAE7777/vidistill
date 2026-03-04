@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import type { GeminiClient } from '../gemini/client.js';
 
 const YOUTUBE_PATTERNS = [
@@ -55,7 +56,36 @@ export interface YouTubeResult {
   uploadedFileName?: string;
 }
 
+/**
+ * Fetch video duration (in seconds) via yt-dlp --dump-json.
+ * Returns undefined if yt-dlp is not installed or the command fails.
+ */
+export function fetchYtDlpDuration(url: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    execFile('yt-dlp', ['--dump-json', '--no-download', url], { timeout: 15_000 }, (err, stdout) => {
+      if (err) {
+        resolve(undefined);
+        return;
+      }
+      try {
+        const data = JSON.parse(stdout) as Record<string, unknown>;
+        const dur = data['duration'];
+        if (typeof dur === 'number' && dur > 0) {
+          resolve(dur);
+        } else {
+          resolve(undefined);
+        }
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
 export async function handleYouTube(url: string, _client: GeminiClient): Promise<YouTubeResult> {
+  // Try to get duration from yt-dlp metadata (no download)
+  const duration = await fetchYtDlpDuration(url);
+
   // Gemini accepts public YouTube URLs directly as fileUri (no upload needed)
-  return { fileUri: url, mimeType: 'video/mp4', source: 'direct' };
+  return { fileUri: url, mimeType: 'video/mp4', source: 'direct', duration };
 }
