@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.5] - 2026-03-05
+
+### Added
+- 3-run transcript consensus — transcription (1a) and diarization (1b) each run 3 times per segment with alignment-based merging and majority voting for speaker labels
+- Decoupled transcription pipeline — split monolithic Pass 1 into focused Pass 1a (pure transcription) and Pass 1b (speaker diarization) with a deterministic merge step
+- Cross-segment speaker reconciliation — normalizes speaker labels across segments so the same person gets a single canonical ID regardless of which segment they appear in
+- People anchoring — extraction constrained to transcript-confirmed speakers, preventing hallucinated participants from visual-only sources
+- Non-interactive progress fallback — stable log output when stdout isn't a TTY (avoids animated progress flooding in piped/CI contexts)
+
+### Changed
+- Temperature set to 1.0 for all gemini-3-flash-preview passes (transcript, visual, chat, people) per Google Gemini 3 recommendation — 0.0 caused erratic behavior
+- Per-segment API calls increased from 3 to 7 (3x transcription + 3x diarization + 1x visual) for consensus coverage
+- Speaker name replacement now applied to all free-text content across output files, not just structured fields
+
+### Fixed
+- YouTube direct URL mode no longer crashes when duration is unavailable — fetches metadata via yt-dlp if installed, falls back to 600s default
+- Diarization gracefully degrades on failure — preserves transcript with SPEAKER_UNKNOWN labels instead of crashing
+- Empty catch blocks in consensus now log warnings instead of silently discarding errors
+- Consensus config.runs validated against 0 and negative values
+- Dead code removed from progress display and pipeline test mocks
+- SCHEMA_PASS_1B speaker_summary items now include required field array
+
 ## [0.4.4] - 2026-03-03
 
 ### Fixed
