@@ -138,8 +138,8 @@ export async function runDistill(args: DistillArgs): Promise<void> {
         geminiDuration: result.duration,
       });
     } catch {
-      // YouTube direct mode without yt-dlp: default to 600s (processes as single segment)
       duration = 600;
+      log.warn('Could not detect video duration — defaulting to 10 minutes. Install yt-dlp for full-length processing: brew install yt-dlp');
     }
     if (result.uploadedFileName != null) {
       uploadedFileNames = [result.uploadedFileName];

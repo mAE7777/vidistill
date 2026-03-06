@@ -82,9 +82,33 @@ export function fetchYtDlpDuration(url: string): Promise<number | undefined> {
   });
 }
 
+/**
+ * Scrape YouTube page HTML to extract video duration from the embedded player response.
+ * Falls back to undefined if the page can't be fetched or parsed.
+ */
+export async function fetchYouTubePageDuration(url: string): Promise<number | undefined> {
+  try {
+    const normalized = normalizeYouTubeUrl(url);
+    if (!normalized) return undefined;
+    const res = await fetch(normalized, {
+      headers: { 'Accept-Language': 'en-US,en;q=0.9' },
+    });
+    if (!res.ok) return undefined;
+    const html = await res.text();
+    const match = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/);
+    if (match?.[1]) {
+      const seconds = parseInt(match[1], 10);
+      if (seconds > 0) return seconds;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function handleYouTube(url: string, _client: GeminiClient): Promise<YouTubeResult> {
-  // Try to get duration from yt-dlp metadata (no download)
-  const duration = await fetchYtDlpDuration(url);
+  // Try yt-dlp first (most accurate), then page scrape as fallback
+  const duration = await fetchYtDlpDuration(url) ?? await fetchYouTubePageDuration(url);
 
   // Gemini accepts public YouTube URLs directly as fileUri (no upload needed)
   return { fileUri: url, mimeType: 'video/mp4', source: 'direct', duration };
