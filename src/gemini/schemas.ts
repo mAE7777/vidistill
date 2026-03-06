@@ -165,7 +165,8 @@ export const SCHEMA_PASS_1B: Schema = {
         properties: {
           speaker_id: { type: Type.STRING },
           description: { type: Type.STRING }
-        }
+        },
+        required: ["speaker_id", "description"]
       }
     }
   },

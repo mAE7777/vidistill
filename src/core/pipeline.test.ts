@@ -5,7 +5,6 @@ import type { GeminiClient } from '../gemini/client.js';
 import { RateLimiter } from '../gemini/rate-limiter.js';
 import { MediaResolution } from '@google/genai';
 
-vi.mock('../passes/transcript.js', () => ({ runTranscript: vi.fn() }));
 vi.mock('../passes/transcription.js', () => ({ runTranscription: vi.fn() }));
 vi.mock('../passes/diarization.js', () => ({ runDiarization: vi.fn() }));
 vi.mock('../passes/transcript-merge.js', () => ({ mergeTranscriptResults: vi.fn() }));
@@ -22,7 +21,6 @@ vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn(), runLinkConsensus: 
 vi.mock('./validator.js', () => ({ validateCodeReconstruction: vi.fn() }));
 vi.mock('./speaker-reconciliation.js', () => ({ reconcileSpeakers: vi.fn() }));
 
-import { runTranscript } from '../passes/transcript.js';
 import { runTranscription } from '../passes/transcription.js';
 import { runDiarization } from '../passes/diarization.js';
 import { mergeTranscriptResults } from '../passes/transcript-merge.js';
@@ -42,7 +40,6 @@ import type { ValidationResult } from './validator.js';
 import { reconcileSpeakers } from './speaker-reconciliation.js';
 import type { ReconciliationResult } from '../types/index.js';
 
-const mockRunTranscript = vi.mocked(runTranscript);
 const mockRunTranscription = vi.mocked(runTranscription);
 const mockRunDiarization = vi.mocked(runDiarization);
 const mockMergeTranscriptResults = vi.mocked(mergeTranscriptResults);
@@ -436,6 +433,54 @@ describe('runPipeline', () => {
     // pass2 for segment 1 should have been called with pass1Transcript: undefined
     const pass2Calls = mockRunVisual.mock.calls;
     expect(pass2Calls[1][0].pass1Transcript).toBeUndefined();
+  });
+
+  it('gracefully degrades with SPEAKER_UNKNOWN when pass1b fails for a segment', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+
+    const error = new Error('diarization failed');
+
+    // segment 0: 1a succeeds, 1b fails 4 times → graceful degradation
+    mockRunTranscription.mockResolvedValueOnce(makePass1a(0));
+    mockRunDiarization
+      .mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(error);
+    // mergeTranscriptResults is called with empty 1b result for graceful degradation
+    mockMergeTranscriptResults.mockImplementationOnce((p1a: any) => ({
+      ...makePass1(p1a.segment_index),
+      transcript_entries: p1a.transcript_entries.map((e: any) => ({ ...e, speaker: 'SPEAKER_UNKNOWN' })),
+    }));
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+    // segments 1-2: all succeed (use defaults)
+    for (let i = 1; i < 3; i++) {
+      mockRunTranscription.mockResolvedValueOnce(makePass1a(i));
+      mockRunDiarization.mockResolvedValueOnce(makePass1b());
+      mockMergeTranscriptResults.mockImplementationOnce((p1a: any) => makePass1(p1a.segment_index));
+      mockRunVisual.mockResolvedValueOnce(makePass2(i));
+    }
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(result.segments).toHaveLength(3);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/segment 0 pass1b failed after 4 attempts/);
+
+    // segment 0 still has a pass1 result (graceful degradation, not null)
+    expect(result.segments[0].pass1).not.toBeNull();
+
+    // mergeTranscriptResults was called with empty speaker data for seg 0
+    const mergeCall = mockMergeTranscriptResults.mock.calls[0];
+    expect(mergeCall[1]).toEqual({ speaker_assignments: [], speaker_summary: [] });
   });
 
   it('returns empty errors array when all passes succeed', async () => {

@@ -17,6 +17,8 @@ const mockProgressBar = {
 vi.mock('@clack/prompts', () => ({
   spinner: vi.fn(() => mockSpinner),
   progress: vi.fn(() => mockProgressBar),
+  isTTY: vi.fn(() => true),
+  isCI: vi.fn(() => false),
   log: {
     info: vi.fn(),
     warn: vi.fn(),
@@ -32,7 +34,7 @@ vi.mock('picocolors', () => ({
   },
 }));
 
-import { progress, log } from '@clack/prompts';
+import { progress, log, isTTY } from '@clack/prompts';
 import { createProgressDisplay, PHASE_LABELS } from './progress.js';
 
 describe('PHASE_LABELS', () => {
@@ -84,6 +86,7 @@ describe('PHASE_LABELS', () => {
 describe('createProgressDisplay', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(isTTY).mockReturnValue(true);
   });
 
   it('starts spinner with pass0 label on creation', () => {
@@ -169,5 +172,15 @@ describe('createProgressDisplay', () => {
     display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
     expect(mockProgressBar.stop).toHaveBeenCalledWith('');
     expect(mockSpinner.stop).not.toHaveBeenCalled();
+  });
+
+  it('falls back to log-only output when not interactive', () => {
+    vi.mocked(isTTY).mockReturnValue(false);
+    const display = createProgressDisplay();
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 1, status: 'running', totalSteps: 2 });
+    display.update({ phase: 'pass1', segment: 0, totalSegments: 1, status: 'done', currentStep: 1, totalSteps: 2 });
+    expect(mockSpinner.start).not.toHaveBeenCalled();
+    expect(progress).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('Extracting transcript... (1/2)');
   });
 });

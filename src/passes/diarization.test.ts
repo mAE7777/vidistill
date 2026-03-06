@@ -156,6 +156,31 @@ describe('runDiarization', () => {
     ).rejects.toThrow('Empty response from Gemini Pass 1b');
   });
 
+  it('passes lang parameter through to withLanguage in system instruction', async () => {
+    const validResult: Pass1bResult = {
+      speaker_assignments: [
+        { timestamp: '00:00:01', speaker: 'SPEAKER_00' },
+      ],
+      speaker_summary: [
+        { speaker_id: 'SPEAKER_00', description: 'Speaker' },
+      ],
+    };
+
+    const client = makeClient(validResult);
+    await runDiarization({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      segment: SEGMENT,
+      model: 'gemini-2.5-flash',
+      pass1aResult: PASS1A_RESULT,
+      lang: 'ja',
+    });
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.config.systemInstruction).toContain('Japanese');
+  });
+
   it('propagates errors thrown by client.generate', async () => {
     const client = {
       generate: vi.fn().mockRejectedValue(new Error('Gemini API error')),

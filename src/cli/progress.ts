@@ -1,4 +1,4 @@
-import { spinner, progress } from '@clack/prompts';
+import { spinner, progress, log, isTTY, isCI } from '@clack/prompts';
 import type { ProgressStatus, PipelineResult } from '../types/index.js';
 
 export const PHASE_LABELS: Record<string, string> = {
@@ -22,6 +22,39 @@ export interface ProgressDisplay {
 }
 
 export function createProgressDisplay(): ProgressDisplay {
+  const interactive = isTTY(process.stdout) && !isCI();
+
+  if (!interactive) {
+    let lastMessage: string | null = null;
+
+    function emit(message: string) {
+      if (message === lastMessage) return;
+      lastMessage = message;
+      log.info(message);
+    }
+
+    function labelFor(status: ProgressStatus): string {
+      const label = PHASE_LABELS[status.phase] ?? status.phase;
+      if (status.currentStep != null && status.totalSteps != null) {
+        return `${label} (${status.currentStep}/${status.totalSteps})`;
+      }
+      return label;
+    }
+
+    return {
+      update(status: ProgressStatus) {
+        if (status.status !== 'done') return;
+        emit(labelFor(status));
+      },
+      onWait(_delayMs: number) {
+        // No-op — rate limit pauses are invisible to the user
+      },
+      complete(_result: PipelineResult, _elapsedMs: number) {
+        // No-op for non-interactive output
+      },
+    };
+  }
+
   const s = spinner();
   s.start(PHASE_LABELS.pass0);
 
@@ -65,13 +98,9 @@ export function createProgressDisplay(): ProgressDisplay {
     // No-op — rate limit pauses are invisible to the user
   }
 
-  function complete(result: PipelineResult, _elapsedMs: number): void {
+  function complete(_result: PipelineResult, _elapsedMs: number): void {
     if (progressBar != null) {
-      if (result.errors.length > 0) {
-        progressBar.stop('');
-      } else {
-        progressBar.stop('');
-      }
+      progressBar.stop('');
     } else {
       s.stop('');
     }
