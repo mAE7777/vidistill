@@ -1,3 +1,4 @@
+import { log } from '@clack/prompts';
 import { parseTimestamp } from '../lib/utils.js';
 import { tokenOverlap } from './consensus.js';
 import type { Pass1aResult, Pass1aEntry, Pass1bResult, SpeakerInfo } from '../types/index.js';
@@ -53,11 +54,12 @@ function mergeTranscriptRuns(runs: Pass1aResult[]): Pass1aResult {
     run.transcript_entries.length > best.transcript_entries.length ? run : best,
   );
 
-  // Mark all entries in non-reference runs as unused
+  // Filter by index (not identity) to handle cases where runFn returns the same object
+  const refIndex = runs.indexOf(referenceRun);
   type TrackableEntry = Pass1aEntry & { used: boolean; seconds: number };
 
   const otherRuns: TrackableEntry[][] = runs
-    .filter((r) => r !== referenceRun)
+    .filter((_, i) => i !== refIndex)
     .map((r) =>
       r.transcript_entries.map((e) => ({
         ...e,
@@ -138,6 +140,8 @@ function mergeSpeakerSummaries(summaries: SpeakerInfo[][]): SpeakerInfo[] {
 /**
  * For a given timestamp, find the speaker label from a run's speaker_assignments
  * using the same 3-second alignment window as transcript merging.
+ * Unlike mergeTranscriptRuns, this intentionally has no `used` tracking —
+ * each transcript entry independently finds its closest speaker assignment.
  */
 function findSpeakerForTimestamp(
   timestamp: string,
@@ -171,14 +175,17 @@ export async function runDiarizationConsensus(params: {
   const { config, runFn, mergedPass1a, onProgress } = params;
   const { runs } = config;
 
+  if (runs <= 0) return null;
+
   const successfulRuns: Pass1bResult[] = [];
 
   for (let i = 0; i < runs; i++) {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch {
-      // Individual run failures are expected — continue to next run
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn(`diarization consensus run ${i + 1}/${runs} failed: ${msg}`);
     }
     onProgress?.(i + 1, runs);
   }
@@ -243,14 +250,19 @@ export async function runTranscriptionConsensus(params: {
   const { config, runFn, onProgress } = params;
   const { runs } = config;
 
+  if (runs <= 0) {
+    return { result: null, runsCompleted: 0, runsAttempted: 0 };
+  }
+
   const successfulRuns: Pass1aResult[] = [];
 
   for (let i = 0; i < runs; i++) {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch {
-      // Individual run failures are expected — continue to next run
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.warn(`transcription consensus run ${i + 1}/${runs} failed: ${msg}`);
     }
     onProgress?.(i + 1, runs);
   }
