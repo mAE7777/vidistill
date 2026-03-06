@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.5] - 2026-03-05
+## [0.5.0] - 2026-03-05
 
 ### Added
 - 3-run transcript consensus — transcription (1a) and diarization (1b) each run 3 times per segment with alignment-based merging and majority voting for speaker labels
