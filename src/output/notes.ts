@@ -1,5 +1,7 @@
 import type {
   SynthesisResult,
+  SegmentResult,
+  EmphasisPattern,
   MeetingNotesDecision,
   MeetingNotesConcept,
   MeetingNotesActionItem,
@@ -11,6 +13,7 @@ import { applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
 
 export interface WriteNotesParams {
   synthesisResult: SynthesisResult | null | undefined;
+  segments?: SegmentResult[];
   speakerMapping?: SpeakerMapping;
 }
 
@@ -86,6 +89,72 @@ function renderActionItems(items: MeetingNotesActionItem[], speakerMapping?: Spe
   return lines;
 }
 
+function collectImplicitQuestions(segments: SegmentResult[]): string[] {
+  const questions: string[] = [];
+  for (const seg of segments) {
+    if (seg.pass3d != null) {
+      questions.push(...seg.pass3d.questions_implicit);
+    }
+  }
+  return questions;
+}
+
+function collectImplicitDecisions(segments: SegmentResult[]): string[] {
+  const decisions: string[] = [];
+  for (const seg of segments) {
+    if (seg.pass3d != null) {
+      decisions.push(...seg.pass3d.decisions_implicit);
+    }
+  }
+  return decisions;
+}
+
+function collectEmphasisPatterns(segments: SegmentResult[]): EmphasisPattern[] {
+  const patterns: EmphasisPattern[] = [];
+  for (const seg of segments) {
+    if (seg.pass3d != null) {
+      patterns.push(...seg.pass3d.emphasis_patterns);
+    }
+  }
+  return patterns;
+}
+
+function renderImplicitQuestions(questions: string[], speakerMapping?: SpeakerMapping): string[] {
+  if (questions.length === 0) return [];
+  const lines: string[] = ['## Implicit Questions', ''];
+  for (const q of questions) {
+    lines.push(`- ${replaceNamesInText(q, speakerMapping)}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function renderImplicitDecisions(decisions: string[], speakerMapping?: SpeakerMapping): string[] {
+  if (decisions.length === 0) return [];
+  const lines: string[] = ['## Implicit Decisions', ''];
+  for (const d of decisions) {
+    lines.push(`- ${replaceNamesInText(d, speakerMapping)}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function renderRecurringThemes(patterns: EmphasisPattern[], speakerMapping?: SpeakerMapping): string[] {
+  if (patterns.length === 0) return [];
+  const sorted = [...patterns].sort((a, b) => b.times_mentioned - a.times_mentioned);
+  const lines: string[] = ['## Recurring Themes', ''];
+  for (const p of sorted) {
+    const ts = p.timestamps.length > 0 ? ` _(${p.timestamps.join(', ')})_` : '';
+    lines.push(`### ${p.concept} (×${p.times_mentioned})${ts}`);
+    lines.push('');
+    if (p.significance.length > 0) {
+      lines.push(replaceNamesInText(p.significance, speakerMapping));
+      lines.push('');
+    }
+  }
+  return lines;
+}
+
 function hasMeaningfulContent(s: SynthesisResult): boolean {
   return (
     s.key_concepts.length > 0 ||
@@ -96,10 +165,22 @@ function hasMeaningfulContent(s: SynthesisResult): boolean {
   );
 }
 
+function hasPass3dContent(segments: SegmentResult[]): boolean {
+  return segments.some(
+    (s) =>
+      s.pass3d != null &&
+      (s.pass3d.questions_implicit.length > 0 ||
+        s.pass3d.decisions_implicit.length > 0 ||
+        s.pass3d.emphasis_patterns.length > 0),
+  );
+}
+
 export function writeNotes(params: WriteNotesParams): string | null {
-  const { synthesisResult, speakerMapping } = params;
+  const { synthesisResult, segments, speakerMapping } = params;
   if (synthesisResult == null) return null;
-  if (!hasMeaningfulContent(synthesisResult)) return null;
+
+  const hasPass3d = segments != null && hasPass3dContent(segments);
+  if (!hasMeaningfulContent(synthesisResult) && !hasPass3d) return null;
 
   const sections: string[] = ['# Notes', ''];
 
@@ -113,6 +194,12 @@ export function writeNotes(params: WriteNotesParams): string | null {
   sections.push(...renderTopics(synthesisResult.topics, speakerMapping));
   sections.push(...renderQuestions(synthesisResult.questions_raised, speakerMapping));
   sections.push(...renderActionItems(synthesisResult.action_items, speakerMapping));
+
+  if (segments != null) {
+    sections.push(...renderImplicitQuestions(collectImplicitQuestions(segments), speakerMapping));
+    sections.push(...renderImplicitDecisions(collectImplicitDecisions(segments), speakerMapping));
+    sections.push(...renderRecurringThemes(collectEmphasisPatterns(segments), speakerMapping));
+  }
 
   // Trim trailing blank lines
   while (sections[sections.length - 1] === '') sections.pop();

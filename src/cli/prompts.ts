@@ -33,6 +33,17 @@ export async function promptContext(): Promise<string | undefined> {
   return result.length > 0 ? result : undefined;
 }
 
+export async function promptOutputName(): Promise<string | undefined> {
+  const value = await text({
+    message: 'Output folder name',
+    placeholder: '(press Enter to auto-detect from source)',
+  });
+
+  handleCancel(value);
+  const result = value.trim();
+  return result.length > 0 ? result : undefined;
+}
+
 export async function promptApiKey(): Promise<string> {
   const value = await password({
     message: 'Gemini API key',
@@ -57,7 +68,7 @@ export async function promptSaveKey(): Promise<boolean> {
   return value;
 }
 
-export type ConfirmationChoice = 'start' | 'edit-video' | 'edit-context' | 'cancel';
+export type ConfirmationChoice = 'start' | 'edit-video' | 'edit-context' | 'edit-name' | 'cancel';
 
 export async function promptConfirmation(): Promise<ConfirmationChoice> {
   const value = await select({
@@ -66,6 +77,7 @@ export async function promptConfirmation(): Promise<ConfirmationChoice> {
       { value: 'start' as const, label: 'Start processing' },
       { value: 'edit-video' as const, label: 'Edit video source' },
       { value: 'edit-context' as const, label: 'Edit context' },
+      { value: 'edit-name' as const, label: 'Edit output name' },
       { value: 'cancel' as const, label: 'Cancel' },
     ],
   });

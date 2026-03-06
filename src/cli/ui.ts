@@ -16,12 +16,14 @@ export function showConfigBox(config: {
   input: string;
   context: string | undefined;
   output: string;
+  outputName?: string;
   videoType?: string;
   lang?: string;
 }): void {
   const lines = [
     `Video:   ${config.input}`,
     `Context: ${config.context ?? '(none)'}`,
+    `Name:    ${config.outputName ?? '(auto-detect)'}`,
     `Output:  ${config.output}`,
   ];
   if (config.videoType === 'audio') {

@@ -200,4 +200,36 @@ describe('writeGuide', () => {
     });
     expect(typeof result).toBe('string');
   });
+
+  it('contains prerequisites section when prerequisites exist', () => {
+    const synthWithPrereqs = {
+      ...SYNTHESIS,
+      prerequisites: [
+        { concept: 'TypeScript Basics', assumed_knowledge_level: 'intermediate' as const, brief_explanation: 'Familiarity with TS types', timestamp_first_assumed: '00:02:00' },
+        { concept: 'Node.js', assumed_knowledge_level: 'basic' as const, brief_explanation: 'Know how to run node', timestamp_first_assumed: '00:05:00' },
+      ],
+    };
+    const result = writeGuide({
+      title: 'Test',
+      source: 's',
+      duration: 60,
+      pipelineResult: makePipelineResult({ synthesisResult: synthWithPrereqs }),
+    });
+    expect(result).toContain('## Prerequisites');
+    expect(result).toContain('TypeScript Basics');
+    expect(result).toContain('Familiarity with TS types');
+    expect(result).toContain('Node.js');
+    expect(result).toContain('### Intermediate Knowledge');
+    expect(result).toContain('### Basic Knowledge');
+  });
+
+  it('does not show prerequisites section when none exist', () => {
+    const result = writeGuide({
+      title: 'Test',
+      source: 's',
+      duration: 60,
+      pipelineResult: makePipelineResult({ synthesisResult: SYNTHESIS }),
+    });
+    expect(result).not.toContain('## Prerequisites');
+  });
 });

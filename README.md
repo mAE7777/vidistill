@@ -69,16 +69,14 @@ vidistill-output/my-video/
 ├── guide.md           # overview and navigation
 ├── transcript.md      # full timestamped transcript
 ├── combined.md        # transcript + visual notes merged
-├── notes.md           # meeting/lecture notes
+├── notes.md           # notes, implicit questions/decisions, recurring themes
 ├── code/              # extracted and reconstructed source files
 │   ├── *.ext          # individual source files
 │   └── code-timeline.md  # code evolution timeline
 ├── people.md          # speakers and participants
 ├── chat.md            # chat messages and links
 ├── action-items.md    # tasks and follow-ups
-├── insights.md        # implicit signals and analysis
 ├── links.md           # all URLs mentioned
-├── prereqs.md         # prerequisite knowledge (when detected)
 ├── timeline.html      # interactive visual timeline
 ├── metadata.json      # processing metadata
 └── raw/               # raw pass outputs

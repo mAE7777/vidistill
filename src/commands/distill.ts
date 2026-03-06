@@ -4,7 +4,7 @@ import { basename, extname, resolve, join } from 'path';
 import { existsSync, openSync, readSync, closeSync } from 'fs';
 import { readdir, rm } from 'fs/promises';
 import { showConfigBox } from '../cli/ui.js';
-import { promptVideoSource, promptContext, promptConfirmation } from '../cli/prompts.js';
+import { promptVideoSource, promptContext, promptOutputName, promptConfirmation } from '../cli/prompts.js';
 import { resolveApiKey } from '../cli/config.js';
 import { createProgressDisplay } from '../cli/progress.js';
 import { GeminiClient } from '../gemini/client.js';
@@ -84,6 +84,9 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   // Step 4: Resolve context (prompt unless --context flag provided)
   let context = args.context ?? (await promptContext());
 
+  // Step 4b: Optional output folder name
+  let outputName: string | undefined = await promptOutputName();
+
   // Step 5: Display configuration and confirm (skip when all inputs provided via CLI flags)
   const allFlagsProvided = args.input != null && args.context != null;
 
@@ -97,6 +100,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
         input: rawInput,
         context,
         output: args.output,
+        outputName,
         videoType: inputIsAudio ? 'audio' : undefined,
         lang: args.lang,
       });
@@ -110,6 +114,9 @@ export async function runDistill(args: DistillArgs): Promise<void> {
           break;
         case 'edit-context':
           context = await promptContext();
+          break;
+        case 'edit-name':
+          outputName = await promptOutputName();
           break;
         case 'cancel':
           cancel('Cancelled.');
@@ -160,6 +167,11 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     }
     // Derive title from local filename (without extension)
     videoTitle = basename(resolved.value, extname(resolved.value));
+  }
+
+  // Use user-provided output name if given
+  if (outputName != null) {
+    videoTitle = outputName;
   }
 
   const model = MODELS.flash;

@@ -45,6 +45,7 @@ vi.mock('../cli/ui.js', () => ({
 vi.mock('../cli/prompts.js', () => ({
   promptVideoSource: vi.fn(),
   promptContext: vi.fn(),
+  promptOutputName: vi.fn().mockResolvedValue(undefined),
   promptConfirmation: vi.fn(),
 }));
 

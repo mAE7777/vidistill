@@ -12,6 +12,10 @@ dist
 *.local
 .env
 
+# Output
+vidistill-output/
+meeting-1/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

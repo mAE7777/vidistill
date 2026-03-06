@@ -1,5 +1,5 @@
 import { formatDuration, applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
-import type { PipelineResult, VideoProfile, SynthesisResult, SpeakerMapping } from '../types/index.js';
+import type { PipelineResult, VideoProfile, SynthesisResult, SpeakerMapping, PrerequisiteConcept } from '../types/index.js';
 
 export interface WriteGuideParams {
   title: string;
@@ -56,6 +56,46 @@ function renderProcessingDetails(pipelineResult: PipelineResult, speakerMapping?
   return lines.join('\n');
 }
 
+const PREREQ_LEVEL_ORDER: Array<PrerequisiteConcept['assumed_knowledge_level']> = ['advanced', 'intermediate', 'basic'];
+
+const PREREQ_LEVEL_LABELS: Record<PrerequisiteConcept['assumed_knowledge_level'], string> = {
+  advanced: 'Advanced',
+  intermediate: 'Intermediate',
+  basic: 'Basic',
+};
+
+function renderPrerequisites(prerequisites: PrerequisiteConcept[] | undefined): string {
+  if (prerequisites == null || prerequisites.length === 0) return '';
+
+  const grouped = new Map<PrerequisiteConcept['assumed_knowledge_level'], PrerequisiteConcept[]>();
+  for (const level of PREREQ_LEVEL_ORDER) {
+    grouped.set(level, []);
+  }
+  for (const c of prerequisites) {
+    const bucket = grouped.get(c.assumed_knowledge_level);
+    if (bucket != null) {
+      bucket.push(c);
+    }
+  }
+
+  const lines: string[] = ['', '## Prerequisites', ''];
+  for (const level of PREREQ_LEVEL_ORDER) {
+    const concepts = grouped.get(level) ?? [];
+    if (concepts.length === 0) continue;
+    lines.push(`### ${PREREQ_LEVEL_LABELS[level]} Knowledge`, '');
+    for (const c of concepts) {
+      lines.push(`**${c.concept}**`);
+      lines.push('');
+      lines.push(c.brief_explanation);
+      lines.push('');
+      lines.push(`_First assumed at: ${c.timestamp_first_assumed}_`);
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function renderIncompletePasses(pipelineResult: PipelineResult): string {
   const { errors, interrupted } = pipelineResult;
   const hasErrors = errors.length > 0;
@@ -109,7 +149,7 @@ export function writeGuide(params: WriteGuideParams): string {
     '## Suggestions',
     '',
     renderSuggestions(synthesisResult, speakerMapping),
-    '',
+    renderPrerequisites(synthesisResult?.prerequisites),
     '## Processing Details',
     '',
     renderProcessingDetails(pipelineResult, speakerMapping),

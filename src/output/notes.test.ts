@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { writeNotes } from './notes.js';
-import type { SynthesisResult } from '../types/index.js';
+import type { SynthesisResult, SegmentResult } from '../types/index.js';
 
 const FULL_SYNTHESIS: SynthesisResult = {
   overview: 'A discussion about the new architecture.',
@@ -126,5 +126,100 @@ describe('writeNotes', () => {
     const result = writeNotes({ synthesisResult: s });
     expect(result).not.toBeNull();
     expect(result).toContain('Use microservices');
+  });
+
+  it('includes implicit questions from segments', () => {
+    const segments: SegmentResult[] = [
+      {
+        index: 0,
+        pass1: null,
+        pass2: null,
+        pass3d: {
+          emotional_shifts: [],
+          emphasis_patterns: [],
+          questions_implicit: ['Why does this matter?', 'What comes next?'],
+          decisions_implicit: [],
+          tasks_assigned: [],
+        },
+      },
+    ];
+    const result = writeNotes({ synthesisResult: FULL_SYNTHESIS, segments });
+    expect(result).toContain('## Implicit Questions');
+    expect(result).toContain('Why does this matter?');
+    expect(result).toContain('What comes next?');
+  });
+
+  it('includes implicit decisions from segments', () => {
+    const segments: SegmentResult[] = [
+      {
+        index: 0,
+        pass1: null,
+        pass2: null,
+        pass3d: {
+          emotional_shifts: [],
+          emphasis_patterns: [],
+          questions_implicit: [],
+          decisions_implicit: ['The team agreed to use React.'],
+          tasks_assigned: [],
+        },
+      },
+    ];
+    const result = writeNotes({ synthesisResult: FULL_SYNTHESIS, segments });
+    expect(result).toContain('## Implicit Decisions');
+    expect(result).toContain('The team agreed to use React.');
+  });
+
+  it('includes recurring themes from emphasis patterns', () => {
+    const segments: SegmentResult[] = [
+      {
+        index: 0,
+        pass1: null,
+        pass2: null,
+        pass3d: {
+          emotional_shifts: [],
+          emphasis_patterns: [
+            { concept: 'Testing', times_mentioned: 5, timestamps: ['00:01:00', '00:05:00'], significance: 'Critical for quality' },
+          ],
+          questions_implicit: [],
+          decisions_implicit: [],
+          tasks_assigned: [],
+        },
+      },
+    ];
+    const result = writeNotes({ synthesisResult: FULL_SYNTHESIS, segments });
+    expect(result).toContain('## Recurring Themes');
+    expect(result).toContain('Testing (×5)');
+    expect(result).toContain('Critical for quality');
+  });
+
+  it('returns content when only pass3d has data (no synthesis content)', () => {
+    const emptySynthesis: SynthesisResult = {
+      overview: '',
+      key_decisions: [],
+      key_concepts: [],
+      action_items: [],
+      questions_raised: [],
+      suggestions: [],
+      topics: [],
+      files_to_generate: [],
+      prerequisites: [],
+    };
+    const segments: SegmentResult[] = [
+      {
+        index: 0,
+        pass1: null,
+        pass2: null,
+        pass3d: {
+          emotional_shifts: [],
+          emphasis_patterns: [],
+          questions_implicit: ['Unstated question'],
+          decisions_implicit: [],
+          tasks_assigned: [],
+        },
+      },
+    ];
+    const result = writeNotes({ synthesisResult: emptySynthesis, segments });
+    expect(result).not.toBeNull();
+    expect(result).toContain('Unstated question');
   });
 });

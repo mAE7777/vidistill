@@ -11,7 +11,7 @@ const METADATA_JSON = JSON.stringify({
   duration: 600,
   model: 'gemini-pro',
   processingTimeMs: 1000,
-  filesGenerated: ['transcript.md', 'notes.md', 'people.md', 'chat.md', 'action-items.md', 'insights.md', 'timeline.html', 'guide.md', 'raw/pass1-seg0.json'],
+  filesGenerated: ['transcript.md', 'notes.md', 'people.md', 'chat.md', 'action-items.md', 'timeline.html', 'guide.md', 'raw/pass1-seg0.json'],
   passesRun: ['pass1'],
   errors: [],
 });
@@ -53,7 +53,6 @@ vi.mock('./people.js', () => ({ writePeople: vi.fn(() => '# People') }));
 vi.mock('./chat.js', () => ({ writeChat: vi.fn(() => '# Chat') }));
 vi.mock('./links.js', () => ({ writeLinks: vi.fn(() => '# Links') }));
 vi.mock('./action-items.js', () => ({ writeActionItems: vi.fn(() => '# Action Items') }));
-vi.mock('./insights.js', () => ({ writeInsights: vi.fn(() => '# Insights') }));
 vi.mock('./metadata.js', () => ({
   writeMetadata: vi.fn(() => '{}'),
   writeRawOutput: vi.fn(() => new Map([['pass1-seg0.json', '{}']])),
@@ -244,9 +243,8 @@ describe('generateOutput', () => {
     // pass3c present → chat.md, links.md
     expect(result.filesGenerated).toContain('chat.md');
     expect(result.filesGenerated).toContain('links.md');
-    // pass3d present → action-items.md, insights.md
+    // pass3d present → action-items.md
     expect(result.filesGenerated).toContain('action-items.md');
-    expect(result.filesGenerated).toContain('insights.md');
     // synthesisResult present → notes.md
     expect(result.filesGenerated).toContain('notes.md');
     // peopleExtraction present → people.md
@@ -326,8 +324,8 @@ describe('generateOutput', () => {
     // chat.md and links.md (has pass3c)
     // note: writeChat returns '# Chat' from mock so it gets written
     expect(result.filesGenerated).toContain('chat.md');
-    // insights.md (has pass3d)
-    expect(result.filesGenerated).toContain('insights.md');
+    // notes.md (has pass3d, even without synthesisResult)
+    expect(result.filesGenerated).toContain('notes.md');
   });
 
   it('passes uncertainCodeFiles to writeCodeFiles as a Set', async () => {
