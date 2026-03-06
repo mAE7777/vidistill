@@ -13,6 +13,53 @@ export interface TranscriptConsensusResult {
 }
 
 const ALIGN_WINDOW_S = 3;
+const DEDUP_WINDOW_S = 10;
+
+/**
+ * Check if two entries are near-duplicates (high token overlap within timestamp window).
+ */
+function isNearDuplicate(a: Pass1aEntry, b: Pass1aEntry): boolean {
+  const delta = Math.abs(parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
+  if (delta > DEDUP_WINDOW_S) return false;
+  if (a.text === b.text) return true;
+  const shared = tokenOverlap(a.text, b.text);
+  const maxTokens = Math.max(a.text.split(/\s+/).length, b.text.split(/\s+/).length);
+  return maxTokens > 0 && shared / maxTokens >= 0.8;
+}
+
+/**
+ * Remove near-duplicate entries within a short timestamp window.
+ * Gemini often produces entries with identical or nearly identical text 2-10s apart.
+ * Checks against the last few accepted entries (not just the immediately previous one)
+ * since a different speaker's line may appear between duplicates.
+ * Keeps the longer entry when two overlap significantly.
+ */
+function deduplicateEntries(entries: Pass1aEntry[]): Pass1aEntry[] {
+  if (entries.length <= 1) return entries;
+
+  const result: Pass1aEntry[] = [entries[0]];
+  for (let i = 1; i < entries.length; i++) {
+    const curr = entries[i];
+    let isDup = false;
+
+    // Check against recent entries (look back up to 3)
+    for (let j = result.length - 1; j >= Math.max(0, result.length - 3); j--) {
+      if (isNearDuplicate(curr, result[j])) {
+        // Keep whichever is longer
+        if (curr.text.length > result[j].text.length) {
+          result[j] = curr;
+        }
+        isDup = true;
+        break;
+      }
+    }
+
+    if (!isDup) {
+      result.push(curr);
+    }
+  }
+  return result;
+}
 
 /**
  * Select the best text from a group of aligned candidates.
@@ -46,7 +93,12 @@ function selectBestText(texts: string[]): string {
  * Aligns entries from other runs within a 3-second window.
  */
 function mergeTranscriptRuns(runs: Pass1aResult[]): Pass1aResult {
-  if (runs.length === 1) return runs[0];
+  if (runs.length === 1) {
+    return {
+      ...runs[0],
+      transcript_entries: deduplicateEntries(runs[0].transcript_entries),
+    };
+  }
 
   // Select reference run: the one with the most transcript entries
   const referenceRun = runs.reduce((best, run) =>
@@ -110,7 +162,7 @@ function mergeTranscriptRuns(runs: Pass1aResult[]): Pass1aResult {
   return {
     segment_index: referenceRun.segment_index,
     time_range: referenceRun.time_range,
-    transcript_entries: mergedEntries,
+    transcript_entries: deduplicateEntries(mergedEntries),
   };
 }
 
