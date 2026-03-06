@@ -64,6 +64,12 @@ export function applySpeakerMapping(label: string, mapping?: Record<string, stri
   for (const [key, value] of Object.entries(mapping)) {
     if (key.toLowerCase() === lower) return value;
   }
+  // Reverse lookup: match label against parenthetical in mapping keys
+  // e.g., label "Chris" matches key "SPEAKER_03 (Chris)" → returns mapped value
+  for (const [key, value] of Object.entries(mapping)) {
+    const keyParen = key.match(/\(([^)]+)\)/);
+    if (keyParen && keyParen[1].trim().toLowerCase() === lower) return value;
+  }
   return label;
 }
 
