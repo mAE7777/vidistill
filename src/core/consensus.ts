@@ -26,7 +26,7 @@ function tokenize(content: string): Set<string> {
 /**
  * Compute token overlap between two strings (Jaccard-like intersection count).
  */
-function tokenOverlap(a: string, b: string): number {
+export function tokenOverlap(a: string, b: string): number {
   const setA = tokenize(a);
   const setB = tokenize(b);
   let count = 0;

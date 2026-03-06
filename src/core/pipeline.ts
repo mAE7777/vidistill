@@ -2,6 +2,7 @@ import { log } from '@clack/prompts';
 import { runTranscription } from '../passes/transcription.js';
 import { runDiarization } from '../passes/diarization.js';
 import { mergeTranscriptResults } from '../passes/transcript-merge.js';
+import { runTranscriptionConsensus, runDiarizationConsensus } from './transcript-consensus.js';
 import { runVisual } from '../passes/visual.js';
 import { runSceneAnalysis } from '../passes/scene-analysis.js';
 import { runCodeReconstruction } from '../passes/code.js';
@@ -126,9 +127,10 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const n = segments.length;
 
   // Calculate total steps for progress tracking
+  const transcriptConsensusRuns = 3;
   const linkConsensusRuns = 3;
   const callsPerSegment =
-    3 +
+    (transcriptConsensusRuns * 2) + 1 +
     (strategy.passes.includes('chat') ? linkConsensusRuns : 0) +
     (strategy.passes.includes('implicit') ? 1 : 0);
   const postSegmentCalls =
@@ -157,50 +159,58 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
     const segment = segments[i];
 
-    // Phase 1a: Transcription
+    // Phase 1a: Transcription consensus (3 runs)
     onProgress?.({ phase: 'pass1a', segment: i, totalSegments: n, status: 'running', totalSteps });
 
-    const pass1aAttempt = await withRetry(
-      () => rateLimiter.execute(() => runTranscription({ client, fileUri, mimeType, segment, model, resolution, lang }), { onWait }),
-      `segment ${i} pass1a`,
-    );
+    const transcriptConsensusResult = await runTranscriptionConsensus({
+      config: { runs: transcriptConsensusRuns },
+      runFn: () => rateLimiter.execute(() => runTranscription({ client, fileUri, mimeType, segment, model, resolution, lang }), { onWait }),
+      onProgress: (_run, _total) => {
+        currentStep++;
+        onProgress?.({ phase: 'pass1a', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+      },
+    });
 
-    let pass1aResult = pass1aAttempt.error !== null ? null : pass1aAttempt.result;
-    if (pass1aAttempt.error !== null) {
-      log.warn(pass1aAttempt.error);
-      errors.push(pass1aAttempt.error);
+    const pass1aResult = transcriptConsensusResult.result;
+    if (pass1aResult === null) {
+      const errMsg = `segment ${i} pass1a: all transcription consensus runs failed`;
+      log.warn(errMsg);
+      errors.push(errMsg);
     }
 
-    currentStep++;
-    onProgress?.({ phase: 'pass1a', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
-
-    // Phase 1b: Diarization (only if 1a succeeded)
+    // Phase 1b: Diarization consensus (only if 1a succeeded)
     let pass1: Pass1Result | null = null;
     if (pass1aResult != null) {
       onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'running', totalSteps });
 
       const p1a = pass1aResult;
-      const pass1bAttempt = await withRetry(
-        () => rateLimiter.execute(() => runDiarization({ client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult: p1a }), { onWait }),
-        `segment ${i} pass1b`,
-      );
+      const pass1bResult = await runDiarizationConsensus({
+        config: { runs: transcriptConsensusRuns },
+        runFn: () => rateLimiter.execute(() => runDiarization({ client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult: p1a }), { onWait }),
+        mergedPass1a: p1a,
+        onProgress: (_run, _total) => {
+          currentStep++;
+          onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+        },
+      });
 
-      if (pass1bAttempt.error !== null) {
-        log.warn(pass1bAttempt.error);
-        errors.push(pass1bAttempt.error);
+      if (pass1bResult === null) {
+        const errMsg = `segment ${i} pass1b: all diarization consensus runs failed`;
+        log.warn(errMsg);
+        errors.push(errMsg);
         // Graceful degradation: transcript without speakers
         pass1 = mergeTranscriptResults(pass1aResult, { speaker_assignments: [], speaker_summary: [] });
-      } else if (pass1bAttempt.result != null) {
-        pass1 = mergeTranscriptResults(pass1aResult, pass1bAttempt.result);
+      } else {
+        pass1 = mergeTranscriptResults(pass1aResult, pass1bResult);
       }
 
-      currentStep++;
-      onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
       pass1RanOnce = true;
     } else {
-      // 1a failed — skip 1b, increment step counter to keep progress accurate
-      currentStep++;
-      onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+      // 1a failed — skip 1b, increment step counter for each skipped consensus run
+      for (let r = 0; r < transcriptConsensusRuns; r++) {
+        currentStep++;
+        onProgress?.({ phase: 'pass1b', segment: i, totalSegments: n, status: 'done', currentStep, totalSteps });
+      }
     }
 
     // Pass 2: Visual

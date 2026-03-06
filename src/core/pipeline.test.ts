@@ -20,6 +20,7 @@ vi.mock('./segmenter.js', () => ({ createSegmentPlan: vi.fn() }));
 vi.mock('./consensus.js', () => ({ runCodeConsensus: vi.fn(), runLinkConsensus: vi.fn() }));
 vi.mock('./validator.js', () => ({ validateCodeReconstruction: vi.fn() }));
 vi.mock('./speaker-reconciliation.js', () => ({ reconcileSpeakers: vi.fn() }));
+vi.mock('./transcript-consensus.js', () => ({ runTranscriptionConsensus: vi.fn(), runDiarizationConsensus: vi.fn() }));
 
 import { runTranscription } from '../passes/transcription.js';
 import { runDiarization } from '../passes/diarization.js';
@@ -39,6 +40,8 @@ import { validateCodeReconstruction } from './validator.js';
 import type { ValidationResult } from './validator.js';
 import { reconcileSpeakers } from './speaker-reconciliation.js';
 import type { ReconciliationResult } from '../types/index.js';
+import { runTranscriptionConsensus, runDiarizationConsensus } from './transcript-consensus.js';
+import type { TranscriptConsensusResult } from './transcript-consensus.js';
 
 const mockRunTranscription = vi.mocked(runTranscription);
 const mockRunDiarization = vi.mocked(runDiarization);
@@ -56,6 +59,8 @@ const mockRunCodeConsensus = vi.mocked(runCodeConsensus);
 const mockRunLinkConsensus = vi.mocked(runLinkConsensus);
 const mockValidateCodeReconstruction = vi.mocked(validateCodeReconstruction);
 const mockReconcileSpeakers = vi.mocked(reconcileSpeakers);
+const mockRunTranscriptionConsensus = vi.mocked(runTranscriptionConsensus);
+const mockRunDiarizationConsensus = vi.mocked(runDiarizationConsensus);
 
 const MOCK_PROFILE: VideoProfile = {
   type: 'coding',
@@ -183,6 +188,15 @@ function makeConsensusResult(overrides?: Partial<ConsensusResult>): ConsensusRes
   };
 }
 
+function makeTranscriptConsensusResult(segmentIndex: number, overrides?: Partial<TranscriptConsensusResult>): TranscriptConsensusResult {
+  return {
+    result: makePass1a(segmentIndex),
+    runsCompleted: 3,
+    runsAttempted: 3,
+    ...overrides,
+  };
+}
+
 function makeValidationResult(overrides?: Partial<ValidationResult>): ValidationResult {
   return {
     confirmed: [],
@@ -228,9 +242,22 @@ describe('runPipeline', () => {
     // Default: identity reconciliation (empty mapping, no canonical speakers)
     mockReconcileSpeakers.mockReturnValue({ mapping: {}, canonicalSpeakers: [] });
 
-    // Default: decoupled transcription passes (1a → 1b → merge)
-    mockRunTranscription.mockImplementation(async (params: any) => makePass1a(params.segment.index));
-    mockRunDiarization.mockImplementation(async () => makePass1b());
+    // Default: transcription consensus returns success for each segment (sequential, 3 calls)
+    let transcriptSegCall = 0;
+    mockRunTranscriptionConsensus.mockImplementation(async (params: any) => {
+      const segIdx = transcriptSegCall++;
+      params.onProgress?.(1, 3);
+      params.onProgress?.(2, 3);
+      params.onProgress?.(3, 3);
+      return { result: makePass1a(segIdx), runsCompleted: 3, runsAttempted: 3 };
+    });
+    // Default: diarization consensus returns success using mergedPass1a.segment_index
+    mockRunDiarizationConsensus.mockImplementation(async (params: any) => {
+      params.onProgress?.(1, 3);
+      params.onProgress?.(2, 3);
+      params.onProgress?.(3, 3);
+      return makePass1b();
+    });
     mockMergeTranscriptResults.mockImplementation((p1a: any) => makePass1(p1a.segment_index));
   });
 
@@ -251,7 +278,7 @@ describe('runPipeline', () => {
 
     // Pass 0 should be called before transcript/visual
     const pass0Order = mockRunSceneAnalysis.mock.invocationCallOrder[0];
-    const firstTranscriptOrder = mockRunTranscription.mock.invocationCallOrder[0];
+    const firstTranscriptOrder = mockRunTranscriptionConsensus.mock.invocationCallOrder[0];
     expect(pass0Order).toBeLessThan(firstTranscriptOrder);
   });
 
@@ -384,15 +411,15 @@ describe('runPipeline', () => {
       expect(result.segments[i].pass2).toEqual(makePass2(i));
     }
 
-    // Verify pass1 was always called before pass2 for each segment
-    const calls = mockRunTranscription.mock.invocationCallOrder;
+    // Verify pass1 consensus was always called before pass2 for each segment
+    const calls = mockRunTranscriptionConsensus.mock.invocationCallOrder;
     const visualCalls = mockRunVisual.mock.invocationCallOrder;
     for (let i = 0; i < 3; i++) {
       expect(calls[i]).toBeLessThan(visualCalls[i]);
     }
   });
 
-  it('sets pass1 to null and runs pass2 with undefined transcript when pass1 fails after 4 attempts for segment 1', async () => {
+  it('sets pass1 to null and runs pass2 with undefined transcript when transcription consensus fails for segment 1', async () => {
     const noSpecialistStrategy: PassStrategy = {
       passes: ['transcript', 'visual'],
       resolution: 'medium',
@@ -400,19 +427,30 @@ describe('runPipeline', () => {
     };
     mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
 
-    const error = new Error('network failure');
-
-    // segment 0: success (defaults handle transcription + diarization + merge)
+    // segment 0: success (default mock handles)
     mockRunVisual.mockResolvedValueOnce(makePass2(0));
 
-    // segment 1 pass1a: fail 4 times (initial + 3 retries) → 1b skipped
-    mockRunTranscription
-      .mockResolvedValueOnce(makePass1a(0)) // seg 0 (called before seg 1)
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error)
-      .mockResolvedValueOnce(makePass1a(2)); // seg 2
+    // segment 1 pass1a: consensus returns null (all runs failed) → 1b skipped
+    mockRunTranscriptionConsensus
+      .mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 3);
+        params.onProgress?.(2, 3);
+        params.onProgress?.(3, 3);
+        return { result: makePass1a(0), runsCompleted: 3, runsAttempted: 3 };
+      })
+      .mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 3);
+        params.onProgress?.(2, 3);
+        params.onProgress?.(3, 3);
+        return { result: null, runsCompleted: 0, runsAttempted: 3 };
+      })
+      .mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 3);
+        params.onProgress?.(2, 3);
+        params.onProgress?.(3, 3);
+        return { result: makePass1a(2), runsCompleted: 3, runsAttempted: 3 };
+      });
+
     // segment 1 pass2: success (with no transcript)
     mockRunVisual.mockResolvedValueOnce(makePass2(1));
 
@@ -425,7 +463,7 @@ describe('runPipeline', () => {
 
     expect(result.segments).toHaveLength(3);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/segment 1 pass1a failed after 4 attempts/);
+    expect(result.errors[0]).toMatch(/segment 1 pass1a: all transcription consensus runs failed/);
 
     expect(result.segments[1].pass1).toBeNull();
     expect(result.segments[1].pass2).toEqual(makePass2(1));
@@ -435,7 +473,7 @@ describe('runPipeline', () => {
     expect(pass2Calls[1][0].pass1Transcript).toBeUndefined();
   });
 
-  it('gracefully degrades with SPEAKER_UNKNOWN when pass1b fails for a segment', async () => {
+  it('gracefully degrades with SPEAKER_UNKNOWN when diarization consensus fails for a segment', async () => {
     const noSpecialistStrategy: PassStrategy = {
       passes: ['transcript', 'visual'],
       resolution: 'medium',
@@ -443,15 +481,15 @@ describe('runPipeline', () => {
     };
     mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
 
-    const error = new Error('diarization failed');
+    // segment 0: 1a succeeds, 1b consensus returns null → graceful degradation
+    mockRunDiarizationConsensus
+      .mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 3);
+        params.onProgress?.(2, 3);
+        params.onProgress?.(3, 3);
+        return null;
+      });
 
-    // segment 0: 1a succeeds, 1b fails 4 times → graceful degradation
-    mockRunTranscription.mockResolvedValueOnce(makePass1a(0));
-    mockRunDiarization
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error)
-      .mockRejectedValueOnce(error);
     // mergeTranscriptResults is called with empty 1b result for graceful degradation
     mockMergeTranscriptResults.mockImplementationOnce((p1a: any) => ({
       ...makePass1(p1a.segment_index),
@@ -461,8 +499,6 @@ describe('runPipeline', () => {
 
     // segments 1-2: all succeed (use defaults)
     for (let i = 1; i < 3; i++) {
-      mockRunTranscription.mockResolvedValueOnce(makePass1a(i));
-      mockRunDiarization.mockResolvedValueOnce(makePass1b());
       mockMergeTranscriptResults.mockImplementationOnce((p1a: any) => makePass1(p1a.segment_index));
       mockRunVisual.mockResolvedValueOnce(makePass2(i));
     }
@@ -473,7 +509,7 @@ describe('runPipeline', () => {
 
     expect(result.segments).toHaveLength(3);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toMatch(/segment 0 pass1b failed after 4 attempts/);
+    expect(result.errors[0]).toMatch(/segment 0 pass1b: all diarization consensus runs failed/);
 
     // segment 0 still has a pass1 result (graceful degradation, not null)
     expect(result.segments[0].pass1).not.toBeNull();
@@ -518,29 +554,37 @@ describe('runPipeline', () => {
     await vi.runAllTimersAsync();
     await promise;
 
-    // 2 (pass0) + 3 segments × 3 passes (pass1a, pass1b, pass2) × 2 events (running + done) = 20 calls total
-    expect(progressCalls).toHaveLength(20);
+    // 2 (pass0) + 3 segments × (3 pass1a runs + 3 pass1b runs + 1 pass2) events with running/done = 32 calls total
+    // pass0: 2 events; each segment: 1 running + 3 done (pass1a) + 1 running + 3 done (pass1b) + 2 (pass2) = 10 per seg
+    expect(progressCalls).toHaveLength(32);
 
     // pass0 events at index 0 and 1
     expect(progressCalls[0]).toEqual({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'running' });
     expect(progressCalls[1]).toEqual({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
 
-    const totalSteps = 9; // 3 segments × 3 passes (pass1a + pass1b + pass2)
+    const totalSteps = 21; // 3 segments × 7 steps (3 pass1a runs + 3 pass1b runs + 1 pass2)
 
-    // Segment 0 starts at index 2: pass1a, pass1b, pass2
+    // Segment 0 starts at index 2:
+    // pass1a: running + done(step1) + done(step2) + done(step3)
     expect(progressCalls[2]).toEqual({ phase: 'pass1a', segment: 0, totalSegments: 3, status: 'running', totalSteps });
     expect(progressCalls[3]).toEqual({ phase: 'pass1a', segment: 0, totalSegments: 3, status: 'done', currentStep: 1, totalSteps });
-    expect(progressCalls[4]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'running', totalSteps });
-    expect(progressCalls[5]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'done', currentStep: 2, totalSteps });
-    expect(progressCalls[6]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'running', totalSteps });
-    expect(progressCalls[7]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'done', currentStep: 3, totalSteps });
+    expect(progressCalls[4]).toEqual({ phase: 'pass1a', segment: 0, totalSegments: 3, status: 'done', currentStep: 2, totalSteps });
+    expect(progressCalls[5]).toEqual({ phase: 'pass1a', segment: 0, totalSegments: 3, status: 'done', currentStep: 3, totalSteps });
+    // pass1b: running + done(step4) + done(step5) + done(step6)
+    expect(progressCalls[6]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[7]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'done', currentStep: 4, totalSteps });
+    expect(progressCalls[8]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'done', currentStep: 5, totalSteps });
+    expect(progressCalls[9]).toEqual({ phase: 'pass1b', segment: 0, totalSegments: 3, status: 'done', currentStep: 6, totalSteps });
+    // pass2: running + done(step7)
+    expect(progressCalls[10]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[11]).toEqual({ phase: 'pass2', segment: 0, totalSegments: 3, status: 'done', currentStep: 7, totalSteps });
 
-    // Segment 1 starts at index 8: pass1a, pass1b, pass2
-    expect(progressCalls[8]).toEqual({ phase: 'pass1a', segment: 1, totalSegments: 3, status: 'running', totalSteps });
-    expect(progressCalls[9]).toEqual({ phase: 'pass1a', segment: 1, totalSegments: 3, status: 'done', currentStep: 4, totalSteps });
+    // Segment 1 starts at index 12:
+    expect(progressCalls[12]).toEqual({ phase: 'pass1a', segment: 1, totalSegments: 3, status: 'running', totalSteps });
+    expect(progressCalls[13]).toEqual({ phase: 'pass1a', segment: 1, totalSegments: 3, status: 'done', currentStep: 8, totalSteps });
 
-    // Segment 2 last event
-    expect(progressCalls[19]).toEqual({ phase: 'pass2', segment: 2, totalSegments: 3, status: 'done', currentStep: 9, totalSteps });
+    // Segment 2 last event (index 31)
+    expect(progressCalls[31]).toEqual({ phase: 'pass2', segment: 2, totalSegments: 3, status: 'done', currentStep: 21, totalSteps });
   });
 
   it('passesRun contains only pass1 and pass2 when strategy has no specialist passes', async () => {
@@ -855,7 +899,7 @@ describe('runPipeline', () => {
     expect(result.peopleExtraction).toEqual(makePeopleExtraction());
 
     // It runs after all segments (all transcript calls already happened)
-    const lastTranscriptOrder = mockRunTranscription.mock.invocationCallOrder[2];
+    const lastTranscriptOrder = mockRunTranscriptionConsensus.mock.invocationCallOrder[2];
     const peopleOrder = mockRunPeopleExtraction.mock.invocationCallOrder[0];
     expect(lastTranscriptOrder).toBeLessThan(peopleOrder);
   });
@@ -1138,11 +1182,21 @@ describe('runPipeline', () => {
     mockReconcileSpeakers.mockReturnValue({ mapping: {}, canonicalSpeakers: [] });
 
     let segmentsDone = 0;
-    mockRunTranscription.mockImplementation(async (params: any) => {
+    let transcriptSegIdx = 0;
+    mockRunTranscriptionConsensus.mockImplementation(async (params: any) => {
+      const segIdx = transcriptSegIdx++;
       segmentsDone++;
-      return makePass1a(params.segment.index);
+      params.onProgress?.(1, 3);
+      params.onProgress?.(2, 3);
+      params.onProgress?.(3, 3);
+      return { result: makePass1a(segIdx), runsCompleted: 3, runsAttempted: 3 };
     });
-    mockRunDiarization.mockImplementation(async () => makePass1b());
+    mockRunDiarizationConsensus.mockImplementation(async (params: any) => {
+      params.onProgress?.(1, 3);
+      params.onProgress?.(2, 3);
+      params.onProgress?.(3, 3);
+      return makePass1b();
+    });
     mockMergeTranscriptResults.mockImplementation((p1a: any) => makePass1(p1a.segment_index));
     mockRunVisual.mockImplementation(async () => makePass2(0));
 
