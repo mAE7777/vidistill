@@ -1,4 +1,3 @@
-import { log } from '@clack/prompts';
 import { parseTimestamp } from '../lib/utils.js';
 import { tokenOverlap } from './consensus.js';
 import type { Pass1aResult, Pass1aEntry, Pass1bResult, SpeakerInfo } from '../types/index.js';
@@ -183,9 +182,8 @@ export async function runDiarizationConsensus(params: {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn(`diarization consensus run ${i + 1}/${runs} failed: ${msg}`);
+    } catch {
+      // Expected — consensus tolerates partial failures
     }
     onProgress?.(i + 1, runs);
   }
@@ -260,9 +258,8 @@ export async function runTranscriptionConsensus(params: {
     try {
       const result = await runFn();
       successfulRuns.push(result);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn(`transcription consensus run ${i + 1}/${runs} failed: ${msg}`);
+    } catch {
+      // Expected — consensus tolerates partial failures
     }
     onProgress?.(i + 1, runs);
   }
