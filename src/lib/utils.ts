@@ -67,7 +67,7 @@ export function applySpeakerMapping(label: string, mapping?: Record<string, stri
   return label;
 }
 
-import type { SegmentResult, SpeakerMapping } from '../types/index.js';
+import type { SegmentResult, SpeakerMapping, PeopleExtraction } from '../types/index.js';
 import { readFile } from 'fs/promises';
 
 /**
@@ -87,11 +87,23 @@ export function replaceNamesInText(text: string, mapping?: SpeakerMapping): stri
 
   if (entries.length === 0) return text;
 
+  // Use placeholder tokens to prevent cascade replacements
+  // (e.g., replacing "Stephen" → "Steven Kang" in "Stephen Kang" producing "Steven Kang Kang")
   let result = text;
+  const placeholders = new Map<string, string>();
+  let idx = 0;
+
   for (const [key, value] of entries) {
+    const placeholder = `\x00PH${idx}\x00`;
+    placeholders.set(placeholder, value);
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`\\b${escaped}\\b`, 'g');
-    result = result.replace(re, value);
+    result = result.replace(re, placeholder);
+    idx++;
+  }
+
+  for (const [placeholder, value] of placeholders) {
+    result = result.replaceAll(placeholder, value);
   }
 
   return result;
@@ -107,6 +119,7 @@ export function replaceNamesInText(text: string, mapping?: SpeakerMapping): stri
 export function buildExpandedMapping(
   segments: SegmentResult[],
   speakerMapping: SpeakerMapping,
+  peopleExtraction?: PeopleExtraction | null,
 ): SpeakerMapping {
   const expanded: SpeakerMapping = { ...speakerMapping };
 
@@ -140,6 +153,24 @@ export function buildExpandedMapping(
         const userAssigned = speakerMapping[match[1]];
         if (userAssigned && match[2] !== userAssigned) {
           expanded[match[2]] = userAssigned;
+        }
+      }
+    }
+  }
+
+  // Cross-reference people extraction participant names with expanded mapping keys.
+  // If a participant name (e.g., "Stephen Kang") contains an existing key (e.g., "Stephen")
+  // that maps to a different name, add the full participant name as a key too.
+  if (peopleExtraction?.participants != null) {
+    for (const p of peopleExtraction.participants) {
+      if (!p.name || expanded[p.name] != null) continue;
+      // Check if any existing non-SPEAKER key is a substring of this participant name
+      for (const [key, value] of Object.entries(expanded)) {
+        if (/^SPEAKER_\d+$/.test(key)) continue;
+        if (key === value) continue;
+        if (p.name !== key && p.name.includes(key)) {
+          expanded[p.name] = value;
+          break;
         }
       }
     }

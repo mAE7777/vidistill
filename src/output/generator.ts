@@ -91,7 +91,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Build expanded mapping that includes detected-name keys for cross-referencing
   const expandedMapping = speakerMapping
-    ? buildExpandedMapping(pipelineResult.segments, speakerMapping)
+    ? buildExpandedMapping(pipelineResult.segments, speakerMapping, pipelineResult.peopleExtraction)
     : undefined;
 
   // Helper: write a file and record it
@@ -341,7 +341,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   }
 
   // Build expanded mapping that includes detected-name keys for cross-referencing
-  const expandedMapping = buildExpandedMapping(pipelineResult.segments, speakerMapping);
+  const expandedMapping = buildExpandedMapping(pipelineResult.segments, speakerMapping, pipelineResult.peopleExtraction);
 
   // Re-render each file that was originally generated (skip raw/ files)
   const filesToReRender = new Set(filesGenerated.filter((f) => !f.startsWith('raw/')));

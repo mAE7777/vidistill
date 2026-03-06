@@ -1,35 +1,26 @@
 import type { PipelineResult, TranscriptEntry, Pass1Result, SpeakerMapping } from '../types/index.js';
-import { applySpeakerMapping } from '../lib/utils.js';
+import { applySpeakerMapping, parseTimestamp } from '../lib/utils.js';
 
 export interface WriteTranscriptParams {
   pipelineResult: PipelineResult;
   speakerMapping?: SpeakerMapping;
 }
 
-const PAUSE_THRESHOLD_SECONDS = 1.5;
-
-function applyEmphasis(text: string, emphasisWords: string[] | undefined): string {
-  if (emphasisWords == null || emphasisWords.length === 0) return text;
-
-  let result = text;
-  for (const word of emphasisWords) {
-    // Escape special regex characters in the word
-    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Match whole word occurrences (case-insensitive), wrap with bold markers
-    const re = new RegExp(`(?<![\\w*])${escaped}(?![\\w*])`, 'gi');
-    result = result.replace(re, `**$&**`);
-  }
-  return result;
+function renderEntry(entry: TranscriptEntry, speakerMapping?: SpeakerMapping): string {
+  const speaker = applySpeakerMapping(entry.speaker, speakerMapping);
+  return `**[${entry.timestamp}]** **${speaker}:** ${entry.text}`;
 }
 
-function renderEntry(entry: TranscriptEntry, speakerMapping?: SpeakerMapping): string {
-  const emphasized = applyEmphasis(entry.text, entry.emphasis_words);
-  const pause =
-    entry.pause_after_seconds != null && entry.pause_after_seconds >= PAUSE_THRESHOLD_SECONDS
-      ? ` _(pause ${entry.pause_after_seconds.toFixed(1)}s)_`
-      : '';
-  const speaker = applySpeakerMapping(entry.speaker, speakerMapping);
-  return `**[${entry.timestamp}]** **${speaker}:** ${emphasized}${pause}`;
+/**
+ * Parse the end timestamp from a time range string like "00:00:00 - 00:18:06".
+ * Returns the end time in seconds, or Infinity if unparseable.
+ */
+function parseEndTime(timeRange: string): number {
+  const parts = timeRange.split('-');
+  if (parts.length < 2) return Infinity;
+  const endStr = parts[parts.length - 1]!.trim();
+  const seconds = parseTimestamp(endStr);
+  return seconds > 0 ? seconds : Infinity;
 }
 
 function renderPass1(pass1: Pass1Result, speakerMapping?: SpeakerMapping): string {
@@ -38,21 +29,17 @@ function renderPass1(pass1: Pass1Result, speakerMapping?: SpeakerMapping): strin
   lines.push(`### Segment ${pass1.segment_index + 1} — ${pass1.time_range}`);
   lines.push('');
 
-  if (pass1.speaker_summary.length > 0) {
-    lines.push(
-      '_Speakers: ' +
-        pass1.speaker_summary
-          .map((s) => `${applySpeakerMapping(s.speaker_id, speakerMapping)} (${s.description})`)
-          .join(', ') +
-        '_',
-    );
-    lines.push('');
-  }
+  // Filter entries within the segment's time range to prevent hallucinated trailing content
+  const endTime = parseEndTime(pass1.time_range);
+  const validEntries = pass1.transcript_entries.filter((entry) => {
+    const entryTime = parseTimestamp(entry.timestamp);
+    return entryTime <= endTime;
+  });
 
-  if (pass1.transcript_entries.length === 0) {
+  if (validEntries.length === 0) {
     lines.push('_No transcript entries for this segment._');
   } else {
-    for (const entry of pass1.transcript_entries) {
+    for (const entry of validEntries) {
       lines.push(renderEntry(entry, speakerMapping));
     }
   }

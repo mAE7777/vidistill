@@ -67,47 +67,15 @@ describe('writeTranscript', () => {
     expect(result).toContain('00:00:15');
   });
 
-  it('bolds emphasis words in transcript text', () => {
-    const pass1: Pass1Result = {
-      segment_index: 0,
-      time_range: '00:00:00 - 00:05:00',
-      transcript_entries: [
-        {
-          timestamp: '00:00:10',
-          speaker: 'SPEAKER_00',
-          text: 'The important concept is recursion',
-          tone: 'instructional',
-          emphasis_words: ['important', 'recursion'],
-        },
-      ],
-      speaker_summary: [],
-    };
-    const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
-    expect(result).toContain('**important**');
-    expect(result).toContain('**recursion**');
+  it('does not include speaker summary descriptions', () => {
+    const result = writeTranscript({
+      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
+    });
+    expect(result).not.toContain('Instructor');
+    expect(result).not.toContain('Host');
   });
 
-  it('does not double-bold already-bolded words', () => {
-    const pass1: Pass1Result = {
-      segment_index: 0,
-      time_range: '00:00:00 - 00:05:00',
-      transcript_entries: [
-        {
-          timestamp: '00:00:10',
-          speaker: 'SPEAKER_00',
-          text: 'Use async await for async operations',
-          tone: 'instructional',
-          emphasis_words: ['async'],
-        },
-      ],
-      speaker_summary: [],
-    };
-    const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
-    // Should not produce ****async**** (double-bolded)
-    expect(result).not.toContain('****');
-  });
-
-  it('shows pause marker for pauses >= 1.5s', () => {
+  it('does not include pause markers', () => {
     const pass1: Pass1Result = {
       segment_index: 0,
       time_range: '00:00:00 - 00:05:00',
@@ -123,11 +91,10 @@ describe('writeTranscript', () => {
       speaker_summary: [],
     };
     const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
-    expect(result).toContain('pause');
-    expect(result).toContain('2.5');
+    expect(result).not.toContain('pause');
   });
 
-  it('does not show pause marker for pauses < 1.5s', () => {
+  it('does not bold emphasis words in text', () => {
     const pass1: Pass1Result = {
       segment_index: 0,
       time_range: '00:00:00 - 00:05:00',
@@ -135,15 +102,34 @@ describe('writeTranscript', () => {
         {
           timestamp: '00:00:10',
           speaker: 'SPEAKER_00',
-          text: 'Quick thought',
-          tone: 'neutral',
-          pause_after_seconds: 0.5,
+          text: 'The important concept is recursion',
+          tone: 'instructional',
+          emphasis_words: ['important', 'recursion'],
         },
       ],
       speaker_summary: [],
     };
     const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
-    expect(result).not.toContain('pause');
+    expect(result).toContain('The important concept is recursion');
+    expect(result).not.toContain('**important**');
+    expect(result).not.toContain('**recursion**');
+  });
+
+  it('filters out entries beyond the segment time range', () => {
+    const pass1: Pass1Result = {
+      segment_index: 0,
+      time_range: '00:00:00 - 00:10:00',
+      transcript_entries: [
+        { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: 'Valid entry', tone: 'neutral' },
+        { timestamp: '00:09:50', speaker: 'SPEAKER_00', text: 'Near the end', tone: 'neutral' },
+        { timestamp: '00:15:00', speaker: 'SPEAKER_00', text: 'Hallucinated entry', tone: 'neutral' },
+      ],
+      speaker_summary: [],
+    };
+    const result = writeTranscript({ pipelineResult: makePipelineResult([makeSegment(pass1)]) });
+    expect(result).toContain('Valid entry');
+    expect(result).toContain('Near the end');
+    expect(result).not.toContain('Hallucinated entry');
   });
 
   it('handles multiple segments', () => {
@@ -181,16 +167,7 @@ describe('writeTranscript', () => {
     });
     expect(result).toContain('Third segment content');
     expect(result).toContain('Hello everyone');
-    // Segment 2 with null pass1 should not appear as a segment header with "null"
     expect(result).not.toContain('null');
-  });
-
-  it('includes speaker summary in segment', () => {
-    const result = writeTranscript({
-      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
-    });
-    expect(result).toContain('Instructor');
-    expect(result).toContain('Host');
   });
 
   it('shows placeholder for empty transcript entries', () => {
@@ -213,17 +190,6 @@ describe('writeTranscript', () => {
     expect(result).toContain('Bob');
     expect(result).not.toContain('SPEAKER_00');
     expect(result).not.toContain('SPEAKER_01');
-  });
-
-  it('replaces speaker_id in speaker summary with mapped names', () => {
-    const result = writeTranscript({
-      pipelineResult: makePipelineResult([makeSegment(PASS1_BASIC)]),
-      speakerMapping: { SPEAKER_00: 'Alice' },
-    });
-    expect(result).toContain('Alice');
-    expect(result).not.toContain('SPEAKER_00');
-    // SPEAKER_01 not in mapping, remains unchanged
-    expect(result).toContain('SPEAKER_01');
   });
 
   it('leaves speaker labels unchanged when no mapping provided', () => {

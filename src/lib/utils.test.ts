@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTime, applySpeakerMapping, buildExpandedMapping } from './utils.js';
+import { formatTime, applySpeakerMapping, buildExpandedMapping, replaceNamesInText } from './utils.js';
 import type { SegmentResult, Pass1Result } from '../types/index.js';
 
 describe('formatTime', () => {
@@ -158,5 +158,59 @@ describe('buildExpandedMapping', () => {
     const result = buildExpandedMapping([makeSeg(pass1)], { SPEAKER_00: 'Alice' });
     // 'Alice' → 'Alice' should not be added
     expect(Object.keys(result)).not.toContain('Alice');
+  });
+
+  it('cross-references people extraction participant names', () => {
+    const pass1 = makePass1(
+      [{ id: 'SPEAKER_01', desc: 'Stephen, a student' }],
+      [{ speaker: 'SPEAKER_01' }],
+    );
+    const result = buildExpandedMapping(
+      [makeSeg(pass1)],
+      { SPEAKER_01: 'Steven Kang' },
+      { participants: [{ name: 'Stephen Kang', role: '', organization: '', speaking_segments: [], contact_info: [], contributions: [] }], relationships: [] },
+    );
+    // 'Stephen' maps to 'Steven Kang' from description, and 'Stephen Kang' should also map
+    expect(result['Stephen']).toBe('Steven Kang');
+    expect(result['Stephen Kang']).toBe('Steven Kang');
+  });
+});
+
+describe('replaceNamesInText', () => {
+  it('replaces names in text using mapping', () => {
+    const result = replaceNamesInText('Stephen discussed the issue', { Stephen: 'Steven Kang' });
+    expect(result).toBe('Steven Kang discussed the issue');
+  });
+
+  it('avoids cascade when longer key matches first', () => {
+    // With both "Stephen Kang" and "Stephen" keys, longest-first prevents cascade
+    const mapping = { 'Stephen Kang': 'Steven Kang', Stephen: 'Steven Kang' };
+    const result = replaceNamesInText('Stephen Kang is here', mapping);
+    expect(result).toBe('Steven Kang is here');
+    expect(result).not.toContain('Steven Kang Kang');
+  });
+
+  it('prevents replacement value from being replaced again', () => {
+    // "Bob" → "Robert Smith" should not then have "Robert" replaced by "Rob"
+    const mapping = { Bob: 'Robert Smith', Robert: 'Rob' };
+    const result = replaceNamesInText('Bob said hello', mapping);
+    expect(result).toBe('Robert Smith said hello');
+  });
+
+  it('skips SPEAKER_XX keys', () => {
+    const mapping = { SPEAKER_00: 'Alice', Bob: 'Robert' };
+    const result = replaceNamesInText('Bob said SPEAKER_00 is here', mapping);
+    expect(result).toContain('Robert');
+    expect(result).toContain('SPEAKER_00');
+  });
+
+  it('returns text unchanged when no mapping', () => {
+    expect(replaceNamesInText('hello world')).toBe('hello world');
+    expect(replaceNamesInText('hello world', undefined)).toBe('hello world');
+  });
+
+  it('skips identity mappings', () => {
+    const result = replaceNamesInText('Alice is here', { Alice: 'Alice' });
+    expect(result).toBe('Alice is here');
   });
 });
