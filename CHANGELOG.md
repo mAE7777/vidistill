@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.4] - 2026-03-07
+## [0.6.0] - 2026-03-07
 
 ### Added
 - MCP server (`vidistill mcp`) — exposes `analyze_video`, `get_transcript`, and `get_code` tools for AI assistant integration via stdio transport
