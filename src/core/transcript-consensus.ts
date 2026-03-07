@@ -17,8 +17,9 @@ const DEDUP_WINDOW_S = 10;
 
 /**
  * Check if two entries are near-duplicates (high token overlap within timestamp window).
+ * Works with any object that has timestamp + text (Pass1aEntry, TranscriptEntry, etc).
  */
-function isNearDuplicate(a: Pass1aEntry, b: Pass1aEntry): boolean {
+export function isNearDuplicate(a: { timestamp: string; text: string }, b: { timestamp: string; text: string }): boolean {
   const delta = Math.abs(parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
   if (delta > DEDUP_WINDOW_S) return false;
   if (a.text === b.text) return true;

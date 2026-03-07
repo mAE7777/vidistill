@@ -588,3 +588,15 @@ export const SCHEMA_SYNTHESIS: Schema = {
   },
   required: ['overview', 'key_decisions', 'key_concepts', 'action_items', 'questions_raised', 'suggestions', 'topics', 'files_to_generate', 'prerequisites'],
 };
+
+export const SCHEMA_DEDUP_REVIEW: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    duplicate_indices: {
+      type: Type.ARRAY,
+      items: { type: Type.INTEGER },
+      description: 'Zero-based indices of transcript entries that are semantic duplicates of an earlier entry and should be removed',
+    },
+  },
+  required: ['duplicate_indices'],
+};

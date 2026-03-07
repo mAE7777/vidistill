@@ -16,6 +16,8 @@ import { MODELS } from '../gemini/models.js';
 import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
 import { reconcileSpeakers } from './speaker-reconciliation.js';
+import { SYSTEM_INSTRUCTION_DEDUP } from '../constants/prompts.js';
+import { SCHEMA_DEDUP_REVIEW } from '../gemini/schemas.js';
 import type {
   RunPipelineConfig,
   PipelineResult,
@@ -30,6 +32,7 @@ import type {
   PeopleExtraction,
   SynthesisResult,
   CanonicalSpeaker,
+  TranscriptEntry,
 } from '../types/index.js';
 
 const RETRY_DELAYS_MS = [2000, 4000, 8000];
@@ -382,6 +385,64 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     log.warn(`speaker reconciliation failed, continuing with original labels: ${msg}`);
+  }
+
+  // LM dedup: ask Gemini to identify semantic duplicates across assembled transcript
+  const allEntries: { segIdx: number; entryIdx: number; entry: TranscriptEntry }[] = [];
+  for (let segIdx = 0; segIdx < results.length; segIdx++) {
+    const p1 = results[segIdx].pass1;
+    if (p1 == null) continue;
+    for (let entryIdx = 0; entryIdx < p1.transcript_entries.length; entryIdx++) {
+      allEntries.push({ segIdx, entryIdx, entry: p1.transcript_entries[entryIdx] });
+    }
+  }
+
+  if (allEntries.length > 20) {
+    try {
+      const numbered = allEntries.map((e, i) =>
+        `[${i}] ${e.entry.timestamp} ${e.entry.speaker}: ${e.entry.text}`
+      ).join('\n');
+
+      const dedupResult = await rateLimiter.execute(
+        () => client.generate({
+          model: MODELS.flash,
+          contents: [{ role: 'user', parts: [{ text: numbered }] }],
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION_DEDUP,
+            responseMimeType: 'application/json',
+            responseSchema: SCHEMA_DEDUP_REVIEW,
+            temperature: 0,
+          },
+        }),
+        { onWait },
+      );
+
+      const parsed = dedupResult as { duplicate_indices?: unknown[] } | null;
+      if (parsed != null && Array.isArray(parsed.duplicate_indices)) {
+        const indices = parsed.duplicate_indices;
+        const toRemove = new Set(
+          indices.filter((v): v is number => typeof v === 'number' && v >= 0 && v < allEntries.length),
+        );
+
+        if (toRemove.size > 0) {
+          // Build per-segment removal sets
+          const segRemovals = new Map<number, Set<number>>();
+          for (const globalIdx of toRemove) {
+            const { segIdx, entryIdx } = allEntries[globalIdx];
+            if (!segRemovals.has(segIdx)) segRemovals.set(segIdx, new Set());
+            segRemovals.get(segIdx)!.add(entryIdx);
+          }
+
+          for (const [segIdx, entryIndices] of segRemovals) {
+            const p1 = results[segIdx].pass1;
+            if (p1 == null) continue;
+            p1.transcript_entries = p1.transcript_entries.filter((_, i) => !entryIndices.has(i));
+          }
+        }
+      }
+    } catch {
+      // LM dedup is best-effort — don't fail the pipeline
+    }
   }
 
   // Pass 3b: People extraction (once, whole video)

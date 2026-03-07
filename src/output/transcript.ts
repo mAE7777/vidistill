@@ -1,5 +1,6 @@
 import type { PipelineResult, TranscriptEntry, Pass1Result, SpeakerMapping } from '../types/index.js';
 import { applySpeakerMapping, parseTimestamp } from '../lib/utils.js';
+import { isNearDuplicate } from '../core/transcript-consensus.js';
 
 export interface WriteTranscriptParams {
   pipelineResult: PipelineResult;
@@ -58,6 +59,19 @@ export function writeTranscript(params: WriteTranscriptParams): string {
   if (segmentsWithPass1.length === 0) {
     sections.push('_No transcript data available._');
     return sections.join('\n');
+  }
+
+  // Cross-segment boundary dedup: remove entries at the start of each segment
+  // that are near-duplicates of entries at the end of the previous segment
+  for (let i = 1; i < segmentsWithPass1.length; i++) {
+    const prev = segmentsWithPass1[i - 1].pass1;
+    const curr = segmentsWithPass1[i].pass1;
+    if (prev == null || curr == null) continue;
+
+    const tail = prev.transcript_entries.slice(-5);
+    curr.transcript_entries = curr.transcript_entries.filter(entry =>
+      !tail.some(prevEntry => isNearDuplicate(entry, prevEntry)),
+    );
   }
 
   for (const seg of segmentsWithPass1) {

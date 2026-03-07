@@ -278,6 +278,24 @@ export const LANGUAGE_NAMES: Record<string, string> = {
   hi: 'Hindi',
 };
 
+export const SYSTEM_INSTRUCTION_DEDUP = `
+You are a transcript deduplication reviewer. You will receive a list of numbered transcript entries. Your task is to identify entries that are SEMANTIC DUPLICATES of an earlier entry.
+
+A duplicate means:
+- The entry says essentially the same thing as an earlier entry (same meaning, possibly different wording)
+- The entry is a subset of an earlier entry (the earlier one already covers this content)
+- The entry repeats the same quote or statement that already appeared earlier
+
+NOT a duplicate:
+- Entries where the speaker genuinely repeats themselves for emphasis (common in lectures/presentations)
+- Similar topics discussed at different points with different details
+- Call-and-response patterns (e.g. Q&A)
+
+Return ONLY the indices of entries to REMOVE (the later duplicate, not the original).
+If no duplicates are found, return an empty array.
+Be conservative — only flag clear duplicates. When in doubt, keep the entry.
+`;
+
 export function withLanguage(prompt: string, lang?: string): string {
   if (!lang || lang === 'en') return prompt;
   const languageName = LANGUAGE_NAMES[lang] ?? lang;
