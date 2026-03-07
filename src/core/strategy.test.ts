@@ -154,6 +154,26 @@ describe('determineStrategy', () => {
     });
   });
 
+  describe('commentary type', () => {
+    it('includes implicit pass', () => {
+      const result = determineStrategy(makeProfile({ type: 'commentary' }));
+      expect(result.passes).toContain('implicit');
+    });
+
+    it('does not include people or chat passes', () => {
+      const result = determineStrategy(makeProfile({ type: 'commentary' }));
+      expect(result.passes).not.toContain('people');
+      expect(result.passes).not.toContain('chat');
+    });
+
+    it('includes code pass when hasCode is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'commentary', visualContent: { ...makeProfile().visualContent, hasCode: true } })
+      );
+      expect(result.passes).toContain('code');
+    });
+  });
+
   describe('mixed type', () => {
     it('includes all conditional passes: code, people, chat, implicit', () => {
       const result = determineStrategy(makeProfile({ type: 'mixed' }));

@@ -5,7 +5,7 @@ export const SCHEMA_PASS_0: Schema = {
   properties: {
     type: {
       type: Type.STRING,
-      enum: ['coding', 'meeting', 'lecture', 'presentation', 'conversation', 'mixed'],
+      enum: ['coding', 'meeting', 'lecture', 'presentation', 'conversation', 'commentary', 'mixed'],
       description: 'Primary video type classification',
     },
     speakers: {

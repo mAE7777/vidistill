@@ -1,5 +1,6 @@
 import type { SegmentResult, SynthesisResult, MeetingNotesActionItem, TaskAssigned, SpeakerMapping } from '../types/index.js';
-import { applySpeakerMapping, replaceNamesInText } from '../lib/utils.js';
+import { applySpeakerMapping, replaceNamesInText, parseTimestamp } from '../lib/utils.js';
+import { tokenOverlap } from '../core/consensus.js';
 
 export interface WriteActionItemsParams {
   segments: SegmentResult[];
@@ -42,6 +43,17 @@ function renderAssignedTasks(tasks: TaskAssigned[], speakerMapping?: SpeakerMapp
   return lines;
 }
 
+function isDuplicateTask(task: TaskAssigned, synthesisItems: MeetingNotesActionItem[]): boolean {
+  for (const item of synthesisItems) {
+    const tsDelta = Math.abs(parseTimestamp(task.timestamp) - parseTimestamp(item.timestamp));
+    if (tsDelta > 120) continue;
+    const shared = tokenOverlap(task.task, item.item);
+    const minLen = Math.min(task.task.split(/\s+/).length, item.item.split(/\s+/).length);
+    if (minLen > 0 && shared / minLen >= 0.6) return true;
+  }
+  return false;
+}
+
 export function writeActionItems(params: WriteActionItemsParams): string | null {
   const { segments, synthesisResult, speakerMapping } = params;
 
@@ -50,10 +62,15 @@ export function writeActionItems(params: WriteActionItemsParams): string | null 
 
   if (synthesisItems.length === 0 && assignedTasks.length === 0) return null;
 
+  // Filter assigned tasks that duplicate synthesis items
+  const dedupedTasks = synthesisItems.length > 0
+    ? assignedTasks.filter(t => !isDuplicateTask(t, synthesisItems))
+    : assignedTasks;
+
   const sections: string[] = ['# Action Items', ''];
 
   sections.push(...renderSynthesisItems(synthesisItems, speakerMapping));
-  sections.push(...renderAssignedTasks(assignedTasks, speakerMapping));
+  sections.push(...renderAssignedTasks(dedupedTasks, speakerMapping));
 
   // Trim trailing blank lines
   while (sections[sections.length - 1] === '') sections.pop();

@@ -24,7 +24,6 @@ import { writePeople } from './people.js';
 import { writeChat } from './chat.js';
 import { writeLinks } from './links.js';
 import { writeActionItems } from './action-items.js';
-import { generateTimeline } from './timeline.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
 import { readJsonFile, buildExpandedMapping } from '../lib/utils.js';
 
@@ -69,14 +68,11 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   }
   if (synthesisResult != null || hasPass3d) optional.add('notes.md');
   if (peopleExtraction != null) optional.add('people.md');
-  const hasPass1 = segments.some((s) => s.pass1 != null);
-  if (hasPass1 || hasPass2) optional.add('timeline.html');
-
   return optional;
 }
 
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
-  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, speakerMapping, declinedMerges } = params;
+  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges } = params;
 
   const slug = slugify(videoTitle);
   const finalOutputDir = join(outputDir, slug);
@@ -211,16 +207,6 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     }
   }
 
-  // Step 2i: timeline.html — conditional on pass1 or pass2 data
-  if (filesToGenerate.has('timeline.html')) {
-    try {
-      const content = generateTimeline({ pipelineResult, duration, speakerMapping: expandedMapping });
-      await writeOutputFile('timeline.html', content);
-    } catch (err) {
-      errors.push(`timeline.html: ${String(err)}`);
-    }
-  }
-
   // Step 3: raw/ directory — always generated
   try {
     const rawFiles = writeRawOutput(pipelineResult);
@@ -255,7 +241,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 5: guide.md — always generated, written LAST (needs full filesGenerated list)
   try {
-    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping });
+    const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping, channelAuthor });
     await writeOutputFile('guide.md', content);
   } catch (err) {
     errors.push(`guide.md: ${String(err)}`);
@@ -401,15 +387,6 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       if (content != null) await writeOutputFile('action-items.md', content);
     } catch (err) {
       errors.push(`action-items.md: ${String(err)}`);
-    }
-  }
-
-  if (filesToReRender.has('timeline.html')) {
-    try {
-      const content = generateTimeline({ pipelineResult, duration, speakerMapping: expandedMapping });
-      await writeOutputFile('timeline.html', content);
-    } catch (err) {
-      errors.push(`timeline.html: ${String(err)}`);
     }
   }
 

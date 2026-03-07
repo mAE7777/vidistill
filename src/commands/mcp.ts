@@ -6,7 +6,7 @@ import { loadConfig } from '../cli/config.js';
 import { GeminiClient } from '../gemini/client.js';
 import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
-import { handleYouTube, extractVideoId } from '../input/youtube.js';
+import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
@@ -42,6 +42,7 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
   let mimeType: string;
   let duration: number;
   let videoTitle: string;
+  let ytAuthor: string | undefined;
 
   if (resolved.type === 'youtube') {
     const result = await handleYouTube(resolved.value, client);
@@ -56,8 +57,14 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
       process.stderr.write(`Duration detection failed, using 600s fallback: ${err instanceof Error ? err.message : String(err)}\n`);
       duration = 600;
     }
-    const videoId = extractVideoId(resolved.value);
-    videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
+    try {
+      const meta = await fetchYouTubeMetadata(resolved.value);
+      videoTitle = meta.title;
+      ytAuthor = meta.author;
+    } catch {
+      const videoId = extractVideoId(resolved.value);
+      videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
+    }
   } else {
     const result = await handleLocalFile(resolved.value, client);
     fileUri = result.fileUri;
@@ -76,6 +83,7 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
 
   const rateLimiter = new RateLimiter();
 
+  const startTime = Date.now();
   const pipelineResult = await runPipeline({
     client,
     fileUri,
@@ -84,8 +92,10 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
     model,
     context,
     lang,
+    channelAuthor: ytAuthor,
     rateLimiter,
   });
+  const elapsedMs = Date.now() - startTime;
 
   await generateOutput({
     pipelineResult,
@@ -94,7 +104,8 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
     source: input,
     duration,
     model,
-    processingTimeMs: 0,
+    processingTimeMs: elapsedMs,
+    channelAuthor: ytAuthor,
   });
 
   // Read synthesis.json for summary

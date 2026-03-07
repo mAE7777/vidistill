@@ -8,6 +8,7 @@ export interface WriteGuideParams {
   pipelineResult: PipelineResult;
   filesGenerated?: string[];
   speakerMapping?: SpeakerMapping;
+  channelAuthor?: string;
 }
 
 function renderFilesTable(filesGenerated: string[] | undefined): string {
@@ -122,7 +123,7 @@ function renderIncompletePasses(pipelineResult: PipelineResult): string {
 }
 
 export function writeGuide(params: WriteGuideParams): string {
-  const { title, source, duration, pipelineResult, filesGenerated, speakerMapping } = params;
+  const { title, source, duration, pipelineResult, filesGenerated, speakerMapping, channelAuthor } = params;
   const { synthesisResult, videoProfile } = pipelineResult;
 
   const rawOverview = synthesisResult?.overview ?? '_No summary available — synthesis pass did not run or produced no output._';
@@ -135,6 +136,7 @@ export function writeGuide(params: WriteGuideParams): string {
     '## Source',
     '',
     `- **File/URL:** ${source}`,
+    ...(channelAuthor ? [`- **Author/Channel:** ${channelAuthor}`] : []),
     `- **Duration:** ${formatDuration(duration)}`,
     `- **Type:** ${videoType}`,
     '',

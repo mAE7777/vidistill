@@ -10,7 +10,7 @@ import { createProgressDisplay } from '../cli/progress.js';
 import { GeminiClient } from '../gemini/client.js';
 import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
-import { handleYouTube, extractVideoId } from '../input/youtube.js';
+import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
@@ -134,6 +134,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   let duration: number;
   let videoTitle: string;
   let uploadedFileNames: string[] = [];
+  let ytAuthor: string | undefined;
 
   if (resolved.type === 'youtube') {
     const result = await handleYouTube(resolved.value, client);
@@ -151,9 +152,15 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     if (result.uploadedFileName != null) {
       uploadedFileNames = [result.uploadedFileName];
     }
-    // Derive title: prefer video ID from URL, fall back to raw URL
-    const videoId = extractVideoId(resolved.value);
-    videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
+    // Fetch real title and author from YouTube
+    try {
+      const meta = await fetchYouTubeMetadata(resolved.value);
+      videoTitle = meta.title;
+      ytAuthor = meta.author;
+    } catch {
+      const videoId = extractVideoId(resolved.value);
+      videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
+    }
   } else {
     const result = await handleLocalFile(resolved.value, client);
     fileUri = result.fileUri;
@@ -210,6 +217,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     model,
     context,
     lang: args.lang,
+    channelAuthor: ytAuthor,
     rateLimiter,
     onProgress: (status) => {
       progress.update(status);
@@ -242,6 +250,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     duration,
     model,
     processingTimeMs: elapsedMs,
+    channelAuthor: ytAuthor,
   });
 
   // Step 13: Clean completion output

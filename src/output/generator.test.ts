@@ -11,7 +11,7 @@ const METADATA_JSON = JSON.stringify({
   duration: 600,
   model: 'gemini-pro',
   processingTimeMs: 1000,
-  filesGenerated: ['transcript.md', 'notes.md', 'people.md', 'chat.md', 'action-items.md', 'timeline.html', 'guide.md', 'raw/pass1-seg0.json'],
+  filesGenerated: ['transcript.md', 'notes.md', 'people.md', 'chat.md', 'action-items.md', 'guide.md', 'raw/pass1-seg0.json'],
   passesRun: ['pass1'],
   errors: [],
 });

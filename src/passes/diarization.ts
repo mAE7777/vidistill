@@ -14,6 +14,7 @@ export interface RunDiarizationParams {
   resolution?: MediaResolution;
   lang?: string;
   pass1aResult: Pass1aResult;
+  channelAuthor?: string;
 }
 
 function formatTranscriptForInjection(pass1a: Pass1aResult): string {
@@ -26,13 +27,14 @@ function formatTranscriptForInjection(pass1a: Pass1aResult): string {
 }
 
 export async function runDiarization(params: RunDiarizationParams): Promise<Pass1bResult> {
-  const { client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult } = params;
+  const { client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult, channelAuthor } = params;
 
   const transcriptText = formatTranscriptForInjection(pass1aResult);
-  const systemInstruction = withLanguage(
-    SYSTEM_INSTRUCTION_PASS_1B.replace('{INJECT_PASS1A_TRANSCRIPT_HERE}', transcriptText),
-    lang,
-  );
+  let baseInstruction = SYSTEM_INSTRUCTION_PASS_1B.replace('{INJECT_PASS1A_TRANSCRIPT_HERE}', transcriptText);
+  if (channelAuthor) {
+    baseInstruction += `\n\nHINT: This video is from a YouTube channel by "${channelAuthor}". If only one speaker is present, consider using this as the speaker name.`;
+  }
+  const systemInstruction = withLanguage(baseInstruction, lang);
 
   const contents = [
     {

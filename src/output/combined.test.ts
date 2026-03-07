@@ -181,6 +181,30 @@ describe('writeCombined', () => {
     expect(result).toContain('**important**');
   });
 
+  it('filters short emphasis words but keeps multi-word and long ones', () => {
+    const pass1WithMixedEmphasis: Pass1Result = {
+      ...PASS1,
+      transcript_entries: [
+        {
+          timestamp: '00:00:05',
+          speaker: 'SPEAKER_00',
+          text: 'At the end of the world we see escalation dominance',
+          tone: 'instructional',
+          emphasis_words: ['end', 'world', 'escalation dominance'],
+        },
+      ],
+    };
+    const result = writeCombined({
+      pipelineResult: makePipelineResult([makeSegment(0, pass1WithMixedEmphasis, null)]),
+    });
+    // "end" (3 chars) should NOT be bolded
+    expect(result).not.toContain('**end**');
+    // "world" (5 chars) SHOULD be bolded
+    expect(result).toContain('**world**');
+    // "escalation dominance" (multi-word) SHOULD be bolded
+    expect(result).toContain('**escalation dominance**');
+  });
+
   it('handles multiple segments', () => {
     const pass1b: Pass1Result = {
       segment_index: 1,

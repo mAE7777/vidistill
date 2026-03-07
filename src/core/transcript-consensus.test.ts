@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runTranscriptionConsensus, runDiarizationConsensus } from './transcript-consensus.js';
+import { runTranscriptionConsensus, runDiarizationConsensus, isNearDuplicate } from './transcript-consensus.js';
 import type { TranscriptConsensusConfig } from './transcript-consensus.js';
 import type { Pass1aResult, Pass1aEntry, Pass1bResult, SpeakerAssignment, SpeakerInfo } from '../types/index.js';
 
@@ -183,6 +183,40 @@ describe('runTranscriptionConsensus', () => {
       expect(result).toBe(singleRun); // exact same reference — no merging
       expect(runsCompleted).toBe(1);
       expect(runsAttempted).toBe(1);
+    });
+  });
+
+  describe('asymmetric dedup', () => {
+    it('isNearDuplicate detects short entry as subset of longer entry', () => {
+      const long = { timestamp: '00:01:00', text: 'The quick brown fox jumps over the lazy dog' };
+      const short = { timestamp: '00:01:03', text: 'The quick brown fox jumps' };
+      expect(isNearDuplicate(long, short)).toBe(true);
+      expect(isNearDuplicate(short, long)).toBe(true);
+    });
+
+    it('deduplicates asymmetric entries during consensus merge', async () => {
+      const longEntry = makeEntry({
+        timestamp: '00:01:00',
+        text: 'The quick brown fox jumps over the lazy dog',
+      });
+      const shortEntry = makeEntry({
+        timestamp: '00:01:03',
+        text: 'The quick brown fox jumps',
+      });
+
+      const run = makeResult([longEntry, shortEntry]);
+      const runFn = makeRunFn([run, run, run]);
+
+      const { result } = await runTranscriptionConsensus({
+        config: DEFAULT_CONFIG,
+        runFn,
+      });
+
+      expect(result).not.toBeNull();
+      // Short entry is a subset of long entry — should be deduped to 1 entry
+      expect(result!.transcript_entries).toHaveLength(1);
+      // The longer entry is kept
+      expect(result!.transcript_entries[0].text).toBe('The quick brown fox jumps over the lazy dog');
     });
   });
 

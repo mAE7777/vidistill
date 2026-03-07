@@ -24,8 +24,15 @@ export function isNearDuplicate(a: { timestamp: string; text: string }, b: { tim
   if (delta > DEDUP_WINDOW_S) return false;
   if (a.text === b.text) return true;
   const shared = tokenOverlap(a.text, b.text);
-  const maxTokens = Math.max(a.text.split(/\s+/).length, b.text.split(/\s+/).length);
-  return maxTokens > 0 && shared / maxTokens >= 0.8;
+  const aTokens = a.text.split(/\s+/).length;
+  const bTokens = b.text.split(/\s+/).length;
+  const maxTokens = Math.max(aTokens, bTokens);
+  const minTokens = Math.min(aTokens, bTokens);
+  // Symmetric check: both entries say roughly the same thing
+  if (maxTokens > 0 && shared / maxTokens >= 0.8) return true;
+  // Asymmetric check: shorter entry is a subset of the longer one
+  if (minTokens > 0 && shared / minTokens >= 0.8) return true;
+  return false;
 }
 
 /**

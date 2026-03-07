@@ -34,6 +34,9 @@ export function determineStrategy(profile: VideoProfile): PassStrategy {
     case 'conversation':
       passes.add('implicit');
       break;
+    case 'commentary':
+      passes.add('implicit');
+      break;
     case 'mixed':
       passes.add('code');
       passes.add('people');

@@ -19,6 +19,8 @@ function renderSpeechEvent(entry: TranscriptEntry, speakerMapping?: SpeakerMappi
   let text = entry.text;
   if (entry.emphasis_words != null && entry.emphasis_words.length > 0) {
     for (const word of entry.emphasis_words) {
+      // Skip short single words (likely noise from overzealous Gemini emphasis)
+      if (!word.includes(' ') && word.length < 4) continue;
       const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const re = new RegExp(`(?<![\\w*])${escaped}(?![\\w*])`, 'gi');
       text = text.replace(re, `**$&**`);

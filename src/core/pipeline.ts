@@ -90,6 +90,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     onWait,
     isShuttingDown,
     lang,
+    channelAuthor,
   } = config;
 
   const errors: string[] = [];
@@ -189,7 +190,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       const p1a = pass1aResult;
       const pass1bResult = await runDiarizationConsensus({
         config: { runs: transcriptConsensusRuns },
-        runFn: () => rateLimiter.execute(() => runDiarization({ client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult: p1a }), { onWait }),
+        runFn: () => rateLimiter.execute(() => runDiarization({ client, fileUri, mimeType, segment, model, resolution, lang, pass1aResult: p1a, channelAuthor }), { onWait }),
         mergedPass1a: p1a,
         onProgress: (_run, _total) => {
           currentStep++;

@@ -111,4 +111,43 @@ describe('writeActionItems', () => {
     const result = writeActionItems({ segments: [seg] });
     expect(typeof result).toBe('string');
   });
+
+  it('filters assigned tasks that duplicate synthesis items', () => {
+    const synthesis: SynthesisResult = {
+      ...SYNTHESIS_WITH_ITEMS,
+      action_items: [
+        { item: 'Produce a follow-up video', timestamp: '00:19:00', mentioned_by: 'Alice' },
+      ],
+    };
+    const pass3d: ImplicitSignals = {
+      ...PASS3D_WITH_TASKS,
+      tasks_assigned: [
+        { timestamp: '00:19:00', assignee: 'Alice', task: 'Produce a follow-up video explaining the details', deadline: '' },
+      ],
+    };
+    const seg = makeSegment(0, pass3d);
+    const result = writeActionItems({ segments: [seg], synthesisResult: synthesis });
+    expect(result).toContain('From Synthesis');
+    expect(result).not.toContain('Assigned Tasks');
+  });
+
+  it('keeps genuinely different assigned tasks alongside synthesis items', () => {
+    const synthesis: SynthesisResult = {
+      ...SYNTHESIS_WITH_ITEMS,
+      action_items: [
+        { item: 'Produce a follow-up video', timestamp: '00:19:00', mentioned_by: 'Alice' },
+      ],
+    };
+    const pass3d: ImplicitSignals = {
+      ...PASS3D_WITH_TASKS,
+      tasks_assigned: [
+        { timestamp: '00:05:00', assignee: 'Bob', task: 'Write unit tests for the API', deadline: 'Friday' },
+      ],
+    };
+    const seg = makeSegment(0, pass3d);
+    const result = writeActionItems({ segments: [seg], synthesisResult: synthesis });
+    expect(result).toContain('From Synthesis');
+    expect(result).toContain('Assigned Tasks');
+    expect(result).toContain('Write unit tests for the API');
+  });
 });

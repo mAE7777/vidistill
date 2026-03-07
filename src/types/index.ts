@@ -96,7 +96,7 @@ export interface MeetingNotesResult {
 }
 
 // New pipeline types
-export type VideoType = 'coding' | 'meeting' | 'lecture' | 'presentation' | 'conversation' | 'mixed' | 'audio';
+export type VideoType = 'coding' | 'meeting' | 'lecture' | 'presentation' | 'conversation' | 'commentary' | 'mixed' | 'audio';
 export type ComplexityLevel = 'simple' | 'moderate' | 'complex';
 
 export interface VideoProfileVisualContent {
@@ -296,6 +296,7 @@ export interface RunPipelineConfig {
   resolution?: MediaResolution;
   context?: string;
   lang?: string;
+  channelAuthor?: string;
   rateLimiter: RateLimiter;
   onProgress?: (status: ProgressStatus) => void;
   onWait?: (delayMs: number) => void;
@@ -310,6 +311,7 @@ export interface GenerateOutputParams {
   duration: number;
   model: string;
   processingTimeMs: number;
+  channelAuthor?: string;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
 }

@@ -105,6 +105,7 @@ CLASSIFICATION RULES:
    - "lecture": Academic lectures, talks, single-speaker educational content
    - "presentation": Slide-based presentations, keynotes, demo days
    - "conversation": Interviews, podcasts, panel discussions without slides
+   - "commentary": Single-speaker opinion, analysis, vlog, reaction, or informal educational content without formal slides or academic structure
    - "mixed": Cannot clearly classify into one category, or multiple types present
 
 2. DETECT visual content:
@@ -142,6 +143,7 @@ PASS RECOMMENDATIONS BY TYPE:
 - lecture: ["transcript", "visual", "implicit", "synthesis"]
 - presentation: ["transcript", "visual", "implicit", "synthesis"] (add "people" if multiple speakers)
 - conversation: ["transcript", "visual", "implicit", "synthesis"]
+- commentary: ["transcript", "visual", "implicit", "synthesis"]
 - mixed: ["transcript", "visual", "code", "people", "chat", "implicit", "synthesis"]
 `;
 
