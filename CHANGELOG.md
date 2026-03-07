@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.3] - 2026-03-07
+
+### Added
+- LM-based transcript deduplication — uses Gemini to identify semantic duplicates across the assembled transcript (same meaning, different wording)
+- Cross-segment boundary deduplication — removes near-duplicate entries where segments overlap
+
 ## [0.6.2] - 2026-03-07
 
 ### Fixed
