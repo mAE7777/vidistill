@@ -44,15 +44,15 @@ const main = defineCommand({
     },
   },
   async run({ args }) {
-    showLogo();
-    showIntro();
-
     const name = args.input;
 
     if (name != null && name in SUBCOMMANDS) {
       await SUBCOMMANDS[name](process.argv.slice(3));
       return;
     }
+
+    showLogo();
+    showIntro();
 
     try {
       await runDistill({
