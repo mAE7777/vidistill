@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { existsSync } from 'fs';
 import { readdir, readFile } from 'fs/promises';
 
-// Mock all heavy dependencies to avoid loading them in tests
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
 }));
@@ -54,101 +53,162 @@ vi.mock('../gemini/models.js', () => ({
   MODELS: { flash: 'gemini-2.0-flash' },
 }));
 
-// We test the internal functions by importing the module and calling run()
-// but we can also test the helper functions by re-exporting or testing through MCP
-
-// For unit testing, let's test the transcript and code reading logic directly
-// by importing the module — the MCP server setup is tested via the exported functions
-
 describe('MCP server', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('get_transcript logic', () => {
-    it('should read transcript entries from pass1 JSON files', async () => {
-      const mockExistsSync = vi.mocked(existsSync);
-      const mockReaddir = vi.mocked(readdir);
-      const mockReadFile = vi.mocked(readFile);
-
-      mockExistsSync.mockReturnValue(true);
-      mockReaddir.mockResolvedValue(['pass1-seg0.json', 'pass1-seg1.json', 'synthesis.json'] as any);
-      mockReadFile.mockImplementation(async (path: any) => {
-        if (String(path).includes('pass1-seg0')) {
-          return JSON.stringify({
-            segment_index: 0,
-            time_range: '0:00-5:00',
-            transcript_entries: [
-              { timestamp: '0:00', speaker: 'Speaker 1', text: 'Hello world', tone: 'neutral' },
-              { timestamp: '0:15', speaker: 'Speaker 2', text: 'Hi there', tone: 'friendly' },
-            ],
-            speaker_summary: [],
-          });
-        }
-        if (String(path).includes('pass1-seg1')) {
-          return JSON.stringify({
-            segment_index: 1,
-            time_range: '5:00-10:00',
-            transcript_entries: [
-              { timestamp: '5:00', speaker: 'Speaker 1', text: 'Continuing', tone: 'neutral' },
-            ],
-            speaker_summary: [],
-          });
-        }
-        return '{}';
-      });
-
-      // Import the module to access the internal getTranscript via the MCP tool
-      // Since we can't easily call internal functions, let's test through the module
-      const { readJsonFile } = await import('../lib/utils.js');
-
-      // Test the parsing logic directly
-      const seg0 = JSON.parse(await mockReadFile('/test/raw/pass1-seg0.json', 'utf8') as string);
-      expect(seg0.transcript_entries).toHaveLength(2);
-      expect(seg0.transcript_entries[0].text).toBe('Hello world');
+  describe('resolveApiKeyNonInteractive', () => {
+    it('should return env var when set', async () => {
+      process.env['GEMINI_API_KEY'] = 'env-key-123';
+      const { resolveApiKeyNonInteractive } = await import('./mcp.js');
+      const key = await resolveApiKeyNonInteractive();
+      expect(key).toBe('env-key-123');
+      delete process.env['GEMINI_API_KEY'];
     });
 
-    it('should handle non-existent output directory', () => {
-      const mockExistsSync = vi.mocked(existsSync);
-      mockExistsSync.mockReturnValue(false);
+    it('should trim env var whitespace', async () => {
+      process.env['GEMINI_API_KEY'] = '  spaced-key  ';
+      const { resolveApiKeyNonInteractive } = await import('./mcp.js');
+      const key = await resolveApiKeyNonInteractive();
+      expect(key).toBe('spaced-key');
+      delete process.env['GEMINI_API_KEY'];
+    });
 
-      // The function should throw "Not a vidistill output directory"
-      // Verified through MCP tool handler returning isError: true
-      expect(mockExistsSync('/nonexistent')).toBe(false);
+    it('should fall back to config when env var is empty', async () => {
+      process.env['GEMINI_API_KEY'] = '';
+      const { resolveApiKeyNonInteractive } = await import('./mcp.js');
+      const key = await resolveApiKeyNonInteractive();
+      expect(key).toBe('test-key');
+      delete process.env['GEMINI_API_KEY'];
+    });
+
+    it('should fall back to config when env var is whitespace-only', async () => {
+      process.env['GEMINI_API_KEY'] = '   ';
+      const { resolveApiKeyNonInteractive } = await import('./mcp.js');
+      const key = await resolveApiKeyNonInteractive();
+      expect(key).toBe('test-key');
+      delete process.env['GEMINI_API_KEY'];
+    });
+
+    it('should throw when no key available', async () => {
+      delete process.env['GEMINI_API_KEY'];
+      const { loadConfig } = await import('../cli/config.js');
+      vi.mocked(loadConfig).mockResolvedValueOnce({});
+      const { resolveApiKeyNonInteractive } = await import('./mcp.js');
+      await expect(resolveApiKeyNonInteractive()).rejects.toThrow('GEMINI_API_KEY not set');
     });
   });
 
-  describe('get_code logic', () => {
-    it('should return empty array when code directory does not exist', () => {
-      const mockExistsSync = vi.mocked(existsSync);
-      mockExistsSync.mockImplementation((path: any) => {
-        if (String(path).includes('code')) return false;
-        return true; // outputDir exists
-      });
+  describe('getTranscript', () => {
+    it('should read and format transcript entries from pass1 files', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['pass1-seg0.json', 'synthesis.json'] as any);
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({
+        transcript_entries: [
+          { timestamp: '0:00', speaker: 'Alice', text: 'Hello', tone: 'neutral' },
+          { timestamp: '0:15', speaker: null, text: 'Background noise', tone: 'neutral' },
+        ],
+      }));
 
-      // When code/ doesn't exist, get_code returns []
-      expect(mockExistsSync('/test/output')).toBe(true);
-      expect(mockExistsSync('/test/output/code')).toBe(false);
+      const { getTranscript } = await import('./mcp.js');
+      const result = await getTranscript('/test/output');
+      expect(result).toBe('[0:00] Alice: Hello\n[0:15] Background noise');
     });
 
-    it('should read code files from code directory', async () => {
-      const mockExistsSync = vi.mocked(existsSync);
-      const mockReaddir = vi.mocked(readdir);
-      const mockReadFile = vi.mocked(readFile);
+    it('should filter by startTime', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['pass1-seg0.json'] as any);
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({
+        transcript_entries: [
+          { timestamp: '0:00', speaker: 'A', text: 'Early', tone: 'neutral' },
+          { timestamp: '5:00', speaker: 'A', text: 'Later', tone: 'neutral' },
+        ],
+      }));
 
-      mockExistsSync.mockReturnValue(true);
-      mockReaddir.mockResolvedValue(['main.py', 'utils.py'] as any);
-      mockReadFile.mockImplementation(async (path: any) => {
+      const { getTranscript } = await import('./mcp.js');
+      const result = await getTranscript('/test/output', 200);
+      expect(result).toBe('[5:00] A: Later');
+    });
+
+    it('should filter by endTime', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['pass1-seg0.json'] as any);
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({
+        transcript_entries: [
+          { timestamp: '0:00', speaker: 'A', text: 'Early', tone: 'neutral' },
+          { timestamp: '5:00', speaker: 'A', text: 'Later', tone: 'neutral' },
+        ],
+      }));
+
+      const { getTranscript } = await import('./mcp.js');
+      const result = await getTranscript('/test/output', undefined, 60);
+      expect(result).toBe('[0:00] A: Early');
+    });
+
+    it('should return empty string for empty transcript_entries', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['pass1-seg0.json'] as any);
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ transcript_entries: [] }));
+
+      const { getTranscript } = await import('./mcp.js');
+      const result = await getTranscript('/test/output');
+      expect(result).toBe('');
+    });
+
+    it('should skip files with null transcript_entries', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['pass1-seg0.json'] as any);
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ transcript_entries: null }));
+
+      const { getTranscript } = await import('./mcp.js');
+      const result = await getTranscript('/test/output');
+      expect(result).toBe('');
+    });
+
+    it('should throw for non-existent output directory', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const { getTranscript } = await import('./mcp.js');
+      await expect(getTranscript('/nonexistent')).rejects.toThrow('Not a vidistill output directory');
+    });
+
+    it('should throw when no pass1 files found', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['synthesis.json'] as any);
+
+      const { getTranscript } = await import('./mcp.js');
+      await expect(getTranscript('/test/output')).rejects.toThrow('No extracted data found');
+    });
+  });
+
+  describe('getCode', () => {
+    it('should return empty array when code directory does not exist', async () => {
+      vi.mocked(existsSync).mockImplementation((p: any) => !String(p).includes('code'));
+
+      const { getCode } = await import('./mcp.js');
+      const result = await getCode('/test/output');
+      expect(result).toEqual([]);
+    });
+
+    it('should read code files with content', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readdir).mockResolvedValue(['main.py', 'utils.py'] as any);
+      vi.mocked(readFile).mockImplementation(async (path: any) => {
         if (String(path).includes('main.py')) return 'print("hello")';
-        if (String(path).includes('utils.py')) return 'def helper(): pass';
-        return '';
+        return 'def helper(): pass';
       });
 
-      const files = await mockReaddir('/test/output/code');
-      expect(files).toHaveLength(2);
+      const { getCode } = await import('./mcp.js');
+      const result = await getCode('/test/output');
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ filename: 'main.py', content: 'print("hello")' });
+      expect(result[1]).toEqual({ filename: 'utils.py', content: 'def helper(): pass' });
+    });
 
-      const content = await mockReadFile('/test/output/code/main.py', 'utf8');
-      expect(content).toBe('print("hello")');
+    it('should throw for non-existent output directory', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+      const { getCode } = await import('./mcp.js');
+      await expect(getCode('/nonexistent')).rejects.toThrow('Not a vidistill output directory');
     });
   });
 
@@ -177,52 +237,24 @@ describe('MCP server', () => {
         return { object: obj, string: str, number: num };
       });
 
-      // We need to re-import to pick up the mocks
       const { run } = await import('./mcp.js');
 
-      // Mock process.on to capture SIGINT handler
       const originalOn = process.on;
-      const sigintHandler = vi.fn();
       process.on = vi.fn().mockImplementation((event, handler) => {
-        if (event === 'SIGINT') sigintHandler.mockImplementation(handler);
         return process;
       }) as any;
 
       try {
         await run([]);
-
-        // Verify 3 tools registered
         expect(mockRegisterTool).toHaveBeenCalledTimes(3);
-
-        // Verify tool names
         const toolNames = mockRegisterTool.mock.calls.map((call: any[]) => call[0]);
         expect(toolNames).toContain('analyze_video');
         expect(toolNames).toContain('get_transcript');
         expect(toolNames).toContain('get_code');
-
-        // Verify server connected
         expect(mockConnect).toHaveBeenCalledTimes(1);
       } finally {
         process.on = originalOn;
       }
-    });
-  });
-
-  describe('analyze_video', () => {
-    it('should suppress progress output (no onProgress callback)', async () => {
-      const { runPipeline } = await import('../core/pipeline.js');
-      const mockRunPipeline = vi.mocked(runPipeline);
-
-      // When analyze_video calls runPipeline, onProgress should be undefined
-      mockRunPipeline.mockResolvedValue({
-        segments: [],
-        passesRun: [],
-        errors: [],
-      });
-
-      // The implementation passes no onProgress/onWait to runPipeline
-      // This is verified by checking the mock call args in the tool registration test
-      expect(mockRunPipeline).not.toHaveBeenCalled(); // Not called yet outside of MCP context
     });
   });
 

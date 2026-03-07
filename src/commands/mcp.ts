@@ -20,7 +20,7 @@ const DEFAULT_OUTPUT = './vidistill-output/';
 /**
  * Resolve API key from env or config file (no interactive prompt).
  */
-async function resolveApiKeyNonInteractive(): Promise<string> {
+export async function resolveApiKeyNonInteractive(): Promise<string> {
   const envKey = process.env['GEMINI_API_KEY'];
   if (envKey && envKey.trim().length > 0) return envKey.trim();
 
@@ -52,7 +52,8 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
         ytDlpDuration: result.duration,
         geminiDuration: result.duration,
       });
-    } catch {
+    } catch (err) {
+      process.stderr.write(`Duration detection failed, using 600s fallback: ${err instanceof Error ? err.message : String(err)}\n`);
       duration = 600;
     }
     const videoId = extractVideoId(resolved.value);
@@ -110,7 +111,7 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
 /**
  * Read transcript from an existing output directory.
  */
-async function getTranscript(
+export async function getTranscript(
   outputDir: string,
   startTime?: number,
   endTime?: number,
@@ -155,7 +156,7 @@ async function getTranscript(
 /**
  * Read code files from an existing output directory.
  */
-async function getCode(outputDir: string): Promise<{ filename: string; content: string }[]> {
+export async function getCode(outputDir: string): Promise<{ filename: string; content: string }[]> {
   const absDir = resolve(outputDir);
   if (!existsSync(absDir)) {
     throw new Error('Not a vidistill output directory');
