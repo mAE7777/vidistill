@@ -23,9 +23,14 @@ export function isNearDuplicate(a: { timestamp: string; text: string }, b: { tim
   const delta = Math.abs(parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
   if (delta > DEDUP_WINDOW_S) return false;
   if (a.text === b.text) return true;
-  const shared = tokenOverlap(a.text, b.text);
-  const aTokens = a.text.split(/\s+/).length;
-  const bTokens = b.text.split(/\s+/).length;
+  // Normalize to lowercase so "Empire" matches "empire"
+  const aLower = a.text.toLowerCase();
+  const bLower = b.text.toLowerCase();
+  const shared = tokenOverlap(aLower, bLower);
+  // Use unique token count (consistent with tokenOverlap's set-based counting)
+  // rather than split-based counting which inflates denominators with repeated words
+  const aTokens = new Set(aLower.match(/[\p{L}\p{N}_]+/gu) ?? []).size;
+  const bTokens = new Set(bLower.match(/[\p{L}\p{N}_]+/gu) ?? []).size;
   const maxTokens = Math.max(aTokens, bTokens);
   const minTokens = Math.min(aTokens, bTokens);
   // Symmetric check: both entries say roughly the same thing

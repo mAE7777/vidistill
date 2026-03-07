@@ -194,6 +194,19 @@ describe('runTranscriptionConsensus', () => {
       expect(isNearDuplicate(short, long)).toBe(true);
     });
 
+    it('detects near-duplicate with different casing', () => {
+      const longer = {
+        timestamp: '00:11:40',
+        text: 'And now the American military is forced to retreat. Well, the moment that the American Empire dies, the Empire of Israel is born.',
+      };
+      const shorter = {
+        timestamp: '00:11:49',
+        text: 'Well, the moment that the American empire dies, the empire of Israel is born. Why?',
+      };
+      expect(isNearDuplicate(longer, shorter)).toBe(true);
+      expect(isNearDuplicate(shorter, longer)).toBe(true);
+    });
+
     it('deduplicates asymmetric entries during consensus merge', async () => {
       const longEntry = makeEntry({
         timestamp: '00:01:00',
