@@ -112,17 +112,10 @@ vidistill can run as an MCP server, letting AI coding tools (Claude Code, Cursor
 vidistill mcp
 ```
 
-To configure in Claude Code, add to `~/.claude/claude_code_config.json`:
+To configure in Claude Code:
 
-```json
-{
-  "mcpServers": {
-    "vidistill": {
-      "command": "npx",
-      "args": ["vidistill", "mcp"]
-    }
-  }
-}
+```bash
+claude mcp add vidistill -- npx vidistill mcp
 ```
 
 **Tools exposed:**

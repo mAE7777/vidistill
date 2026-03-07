@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.2] - 2026-03-07
+
+### Fixed
+- README MCP setup instructions now use `claude mcp add` instead of a non-existent config file
+
 ## [0.6.1] - 2026-03-07
 
 ### Fixed
