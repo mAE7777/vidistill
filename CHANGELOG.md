@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.4] - 2026-03-07
+
+### Added
+- MCP server (`vidistill mcp`) — exposes `analyze_video`, `get_transcript`, and `get_code` tools for AI assistant integration via stdio transport
+- Optional output folder name prompt — YouTube videos no longer stuck with opaque `youtube-{videoId}` folder names
+- YouTube duration detection via HTML scraping fallback when yt-dlp is not installed, preventing silent transcript truncation at 10 minutes
+- Prerequisites section in guide.md — knowledge prerequisites extracted from synthesis, grouped by level
+
+### Changed
+- Insights and prereqs merged into notes.md and guide.md — low-signal standalone files (insights.md, prereqs.md) removed; valuable content (implicit decisions, questions, recurring themes, prerequisites) preserved in existing files
+
+### Fixed
+- **Transcript quality**: Near-identical duplicate entries from Gemini (same text, timestamps 2-10s apart) now deduplicated; transient consensus run failure warnings no longer shown to users
+- **Speaker naming**: people.md now properly updates names during `rename-speakers` (was skipping non-SPEAKER_XX participant names)
+- **YouTube handling**: Duration detection no longer silently defaults to 600s when yt-dlp is unavailable — HTML fallback added
+- **MCP server**: Fixed typecheck error from readdir overload, added stderr logging to duration fallback catch, rewrote tests to invoke actual functions instead of testing mock return values
+- **Pipeline**: Dead code removed from progress display; `.gitignore` updated; schema validation tightened for diarization pass
+- **Consensus**: Individual run failure warnings suppressed from user output (transient errors handled by consensus mechanism); early return guard added for invalid runs config
+
 ## [0.5.0] - 2026-03-05
 
 ### Added
