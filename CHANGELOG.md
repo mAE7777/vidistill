@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.6.1] - 2026-03-07
+
+### Fixed
+- MCP server no longer outputs CLI logo and intro text that corrupts the stdio protocol
+
 ## [0.6.0] - 2026-03-07
 
 ### Added
