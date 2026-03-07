@@ -104,6 +104,35 @@ vidistill rename-speakers ./vidistill-output/my-meeting/ --rename "Steven Kang" 
 vidistill rename-speakers ./vidistill-output/my-meeting/ --merge "K Iphone" "Kristian"
 ```
 
+## MCP Server
+
+vidistill can run as an MCP server, letting AI coding tools (Claude Code, Cursor, etc.) analyze videos and read output directly.
+
+```bash
+vidistill mcp
+```
+
+To configure in Claude Code, add to `~/.claude/claude_code_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "vidistill": {
+      "command": "npx",
+      "args": ["vidistill", "mcp"]
+    }
+  }
+}
+```
+
+**Tools exposed:**
+
+- `analyze_video` — run the full pipeline on a URL or file, returns output dir + summary
+- `get_transcript` — read transcript from an existing output dir, with optional time range filtering
+- `get_code` — read extracted code files from an existing output dir
+
+Requires `GEMINI_API_KEY` set as environment variable or in `~/.vidistill/config.json`.
+
 ## How It Works
 
 Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Supported audio formats: MP3, AAC, WAV, FLAC, OGG, M4A.
