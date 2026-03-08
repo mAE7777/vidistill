@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0] - 2026-03-07
+
+### Added
+- Boundary overlap trimming — detects and trims overlapping text at transcript entry boundaries using sequential word matching (5+ consecutive words), eliminating partial duplication that set-based dedup couldn't catch
+- Cross-segment boundary dedup in combined.md — was previously only applied to transcript.md
+
+### Fixed
+- Transcript entries with ~50-60% boundary overlap (suffix of entry N repeated as prefix of entry N+1) no longer produce duplicated text in output
+- Case-insensitive transcript dedup — "Empire" and "empire" now correctly match as near-duplicates
+- Asymmetric dedup — shorter entries that are subsets of longer entries are properly detected and removed
+- Single-run transcription mode now applies dedup and boundary trimming (was returning raw Gemini output)
+- Action items dedup, YouTube metadata extraction, emphasis word filtering, and commentary type classification improvements
+- Timeline output removed (was low-value HTML file)
+
 ## [0.6.3] - 2026-03-07
 
 ### Added

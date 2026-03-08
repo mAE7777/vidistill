@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runTranscriptionConsensus, runDiarizationConsensus, isNearDuplicate } from './transcript-consensus.js';
+import { runTranscriptionConsensus, runDiarizationConsensus, isNearDuplicate, findSuffixPrefixOverlap, trimBoundaryOverlap } from './transcript-consensus.js';
 import type { TranscriptConsensusConfig } from './transcript-consensus.js';
 import type { Pass1aResult, Pass1aEntry, Pass1bResult, SpeakerAssignment, SpeakerInfo } from '../types/index.js';
 
@@ -180,7 +180,8 @@ describe('runTranscriptionConsensus', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result).toBe(singleRun); // exact same reference — no merging
+      expect(result!.transcript_entries).toHaveLength(1);
+      expect(result!.transcript_entries[0].text).toBe('Only run');
       expect(runsCompleted).toBe(1);
       expect(runsAttempted).toBe(1);
     });
@@ -443,5 +444,182 @@ describe('runDiarizationConsensus', () => {
 
       expect(result).toBeNull();
     });
+  });
+});
+
+// --- Boundary overlap trimming ---
+
+describe('findSuffixPrefixOverlap', () => {
+  it('returns overlap length for exact suffix-prefix match', () => {
+    const prev = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
+    const curr = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'];
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(10);
+  });
+
+  it('returns 0 when no overlap', () => {
+    const prev = ['a', 'b', 'c', 'd', 'e'];
+    const curr = ['f', 'g', 'h', 'i', 'j'];
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(0);
+  });
+
+  it('returns 0 when match is below threshold (4 words)', () => {
+    const prev = ['a', 'b', 'c', 'x', 'y', 'z', 'w'];
+    const curr = ['y', 'z', 'w', 'q'];
+    // only 3 words match at suffix/prefix — below MIN_OVERLAP_WORDS=5
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(0);
+  });
+
+  it('returns 5 at exact threshold', () => {
+    const prev = ['a', 'b', 'c', 'd', 'e'];
+    const curr = ['a', 'b', 'c', 'd', 'e', 'f'];
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(5);
+  });
+
+  it('finds longest valid match when partial breaks mid-sequence', () => {
+    // prev suffix: x p q r s t
+    // curr prefix: p q r s t u
+    // longest overlap = 5 (p q r s t)
+    const prev = ['x', 'p', 'q', 'r', 's', 't'];
+    const curr = ['p', 'q', 'r', 's', 't', 'u'];
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(5);
+  });
+
+  it('returns 0 for empty arrays', () => {
+    expect(findSuffixPrefixOverlap([], [])).toBe(0);
+    expect(findSuffixPrefixOverlap(['a'], [])).toBe(0);
+    expect(findSuffixPrefixOverlap([], ['a'])).toBe(0);
+  });
+
+  it('returns 0 when one array is shorter than MIN_OVERLAP', () => {
+    const prev = ['a', 'b', 'c'];
+    const curr = ['a', 'b', 'c', 'd'];
+    expect(findSuffixPrefixOverlap(prev, curr)).toBe(0);
+  });
+});
+
+describe('trimBoundaryOverlap', () => {
+  it('trims overlapping prefix from second entry', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'alpha beta gamma delta epsilon' },
+      { timestamp: '00:01:10', text: 'alpha beta gamma delta epsilon zeta eta' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[0].text).toBe('alpha beta gamma delta epsilon');
+    expect(result[1].text).toBe('zeta eta');
+  });
+
+  it('passes through entries with no overlap', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'the quick brown fox jumps' },
+      { timestamp: '00:01:10', text: 'over the lazy dog today' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[0].text).toBe('the quick brown fox jumps');
+    expect(result[1].text).toBe('over the lazy dog today');
+  });
+
+  it('passes through entries with below-threshold match (4 words)', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'one two three four' },
+      { timestamp: '00:01:05', text: 'one two three four five' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    // only 4 words match — below threshold
+    expect(result).toHaveLength(2);
+    expect(result[1].text).toBe('one two three four five');
+  });
+
+  it('drops entry when fully absorbed', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'word1 word2 word3 word4 word5 word6' },
+      { timestamp: '00:01:08', text: 'word2 word3 word4 word5 word6' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(1);
+    expect(result[0].text).toBe('word1 word2 word3 word4 word5 word6');
+  });
+
+  it('handles cascade trimming (A→B→C)', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'one two three four five six seven' },
+      { timestamp: '00:01:10', text: 'three four five six seven eight nine ten' },
+      { timestamp: '00:01:20', text: 'six seven eight nine ten eleven twelve' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(3);
+    expect(result[0].text).toBe('one two three four five six seven');
+    expect(result[1].text).toBe('eight nine ten');
+    // After B is trimmed to "eight nine ten", C's overlap with B is < 5 words
+    expect(result[2].text).toBe('six seven eight nine ten eleven twelve');
+  });
+
+  it('cleans orphaned leading punctuation after trim', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'the world is changing very rapidly today' },
+      { timestamp: '00:01:10', text: 'is changing very rapidly today, so we must adapt' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[1].text).toBe('so we must adapt');
+  });
+
+  it('skips entries with timestamp gap > 30s', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'alpha beta gamma delta epsilon' },
+      { timestamp: '00:01:35', text: 'alpha beta gamma delta epsilon zeta' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    // No trimming despite text match — too far apart
+    expect(result[1].text).toBe('alpha beta gamma delta epsilon zeta');
+  });
+
+  it('returns single entry unchanged', () => {
+    const entries = [{ timestamp: '00:01:00', text: 'hello world' }];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(1);
+    expect(result[0].text).toBe('hello world');
+  });
+
+  it('handles case-insensitive matching', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'The American Empire Dies Here Today' },
+      { timestamp: '00:01:10', text: 'the american empire dies here today and tomorrow' },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[1].text).toBe('and tomorrow');
+  });
+
+  it('preserves metadata fields through trimming', () => {
+    const entries = [
+      { timestamp: '00:01:00', text: 'alpha beta gamma delta epsilon', tone: 'calm' as const, emphasis_words: ['alpha'] },
+      { timestamp: '00:01:10', text: 'alpha beta gamma delta epsilon zeta eta', tone: 'excited' as const, emphasis_words: ['zeta'], pause_after_seconds: 2 },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[1].text).toBe('zeta eta');
+    expect(result[1].tone).toBe('excited');
+    expect(result[1].emphasis_words).toEqual(['zeta']);
+    expect(result[1].pause_after_seconds).toBe(2);
+  });
+
+  it('handles real-world overlapping transcript entries', () => {
+    const entries = [
+      {
+        timestamp: '00:04:09',
+        text: 'So, this is a war of perception, a war of narrative. And whoever controls the story controls the outcome.',
+      },
+      {
+        timestamp: '00:04:16',
+        text: 'And whoever controls the story controls the outcome. Now, what does this mean for the average person?',
+      },
+    ];
+    const result = trimBoundaryOverlap(entries);
+    expect(result).toHaveLength(2);
+    expect(result[0].text).toBe('So, this is a war of perception, a war of narrative. And whoever controls the story controls the outcome.');
+    expect(result[1].text).toBe('Now, what does this mean for the average person?');
   });
 });

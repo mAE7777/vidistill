@@ -1,4 +1,5 @@
 import { changeTypeBadge, parseTimestamp, applySpeakerMapping } from '../lib/utils.js';
+import { isNearDuplicate, trimBoundaryOverlap } from '../core/transcript-consensus.js';
 import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote, SpeakerMapping } from '../types/index.js';
 
 export interface WriteCombinedParams {
@@ -66,6 +67,32 @@ export function writeCombined(params: WriteCombinedParams): string {
   const { segments } = pipelineResult;
 
   const sections: string[] = ['# Combined View', '', '_Chronological interleaving of speech, code, and visuals._', ''];
+
+  // Cross-segment boundary dedup (matching transcript.ts behavior)
+  const segmentsWithPass1 = segments.filter(s => s.pass1 != null);
+  for (let i = 1; i < segmentsWithPass1.length; i++) {
+    const prev = segmentsWithPass1[i - 1].pass1;
+    const curr = segmentsWithPass1[i].pass1;
+    if (prev == null || curr == null) continue;
+
+    const tail = prev.transcript_entries.slice(-5);
+    curr.transcript_entries = curr.transcript_entries.filter(entry =>
+      !tail.some(prevEntry => isNearDuplicate(entry, prevEntry)),
+    );
+
+    if (curr.transcript_entries.length > 0 && prev.transcript_entries.length > 0) {
+      const boundaryRegion = [
+        prev.transcript_entries[prev.transcript_entries.length - 1],
+        curr.transcript_entries[0],
+      ];
+      const trimmed = trimBoundaryOverlap(boundaryRegion);
+      if (trimmed.length < 2) {
+        curr.transcript_entries.shift();
+      } else if (trimmed[1].text !== curr.transcript_entries[0].text) {
+        curr.transcript_entries[0] = { ...curr.transcript_entries[0], text: trimmed[1].text };
+      }
+    }
+  }
 
   for (const seg of segments) {
     const { pass1, pass2 } = seg;

@@ -1,6 +1,6 @@
 import type { PipelineResult, TranscriptEntry, Pass1Result, SpeakerMapping } from '../types/index.js';
 import { applySpeakerMapping, parseTimestamp } from '../lib/utils.js';
-import { isNearDuplicate } from '../core/transcript-consensus.js';
+import { isNearDuplicate, trimBoundaryOverlap } from '../core/transcript-consensus.js';
 
 export interface WriteTranscriptParams {
   pipelineResult: PipelineResult;
@@ -72,6 +72,20 @@ export function writeTranscript(params: WriteTranscriptParams): string {
     curr.transcript_entries = curr.transcript_entries.filter(entry =>
       !tail.some(prevEntry => isNearDuplicate(entry, prevEntry)),
     );
+
+    // Trim boundary overlap on first surviving entry
+    if (curr.transcript_entries.length > 0 && prev.transcript_entries.length > 0) {
+      const boundaryRegion = [
+        prev.transcript_entries[prev.transcript_entries.length - 1],
+        curr.transcript_entries[0],
+      ];
+      const trimmed = trimBoundaryOverlap(boundaryRegion);
+      if (trimmed.length < 2) {
+        curr.transcript_entries.shift();
+      } else if (trimmed[1].text !== curr.transcript_entries[0].text) {
+        curr.transcript_entries[0] = { ...curr.transcript_entries[0], text: trimmed[1].text };
+      }
+    }
   }
 
   for (const seg of segmentsWithPass1) {

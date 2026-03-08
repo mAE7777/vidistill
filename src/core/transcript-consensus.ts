@@ -14,6 +14,86 @@ export interface TranscriptConsensusResult {
 
 const ALIGN_WINDOW_S = 3;
 const DEDUP_WINDOW_S = 10;
+const BOUNDARY_WINDOW_S = 30;  // wider than DEDUP_WINDOW_S — precise matching allows it
+const MIN_OVERLAP_WORDS = 5;   // minimum consecutive word match to trigger trim
+
+interface WordPosition {
+  lower: string;   // lowercase word for comparison
+  endPos: number;  // character position after the word in original text
+}
+
+function extractWordsWithPositions(text: string): WordPosition[] {
+  const regex = /[\p{L}\p{N}_]+/gu;
+  const words: WordPosition[] = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    words.push({ lower: match[0].toLowerCase(), endPos: match.index + match[0].length });
+  }
+  return words;
+}
+
+export function findSuffixPrefixOverlap(prevWords: string[], currWords: string[]): number {
+  const maxOverlap = Math.min(prevWords.length, currWords.length);
+  for (let len = maxOverlap; len >= MIN_OVERLAP_WORDS; len--) {
+    const offset = prevWords.length - len;
+    let match = true;
+    for (let k = 0; k < len; k++) {
+      if (prevWords[offset + k] !== currWords[k]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return len;
+  }
+  return 0;
+}
+
+export function trimBoundaryOverlap<T extends { timestamp: string; text: string }>(entries: T[]): T[] {
+  if (entries.length <= 1) return entries;
+
+  const sorted = [...entries].sort((a, b) =>
+    parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp),
+  );
+
+  const result: T[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = result[result.length - 1];
+    const curr = sorted[i];
+
+    const delta = parseTimestamp(curr.timestamp) - parseTimestamp(prev.timestamp);
+    if (delta > BOUNDARY_WINDOW_S || delta < 0) {
+      result.push(curr);
+      continue;
+    }
+
+    const prevWords = extractWordsWithPositions(prev.text);
+    const currWords = extractWordsWithPositions(curr.text);
+
+    const overlapLen = findSuffixPrefixOverlap(
+      prevWords.map(w => w.lower),
+      currWords.map(w => w.lower),
+    );
+
+    if (overlapLen < MIN_OVERLAP_WORDS) {
+      result.push(curr);
+      continue;
+    }
+
+    // Trim the overlapping prefix from curr
+    const cutPos = currWords[overlapLen - 1].endPos;
+    const remaining = curr.text.slice(cutPos).replace(/^[\s,;.!?:—–\-]+/, '').trim();
+
+    if (remaining.length === 0) {
+      // Entirely absorbed by prev — drop this entry
+      continue;
+    }
+
+    result.push({ ...curr, text: remaining } as T);
+  }
+
+  return result;
+}
 
 /**
  * Check if two entries are near-duplicates (high token overlap within timestamp window).
@@ -109,7 +189,7 @@ function mergeTranscriptRuns(runs: Pass1aResult[]): Pass1aResult {
   if (runs.length === 1) {
     return {
       ...runs[0],
-      transcript_entries: deduplicateEntries(runs[0].transcript_entries),
+      transcript_entries: trimBoundaryOverlap(deduplicateEntries(runs[0].transcript_entries)),
     };
   }
 
@@ -175,7 +255,7 @@ function mergeTranscriptRuns(runs: Pass1aResult[]): Pass1aResult {
   return {
     segment_index: referenceRun.segment_index,
     time_range: referenceRun.time_range,
-    transcript_entries: deduplicateEntries(mergedEntries),
+    transcript_entries: trimBoundaryOverlap(deduplicateEntries(mergedEntries)),
   };
 }
 
@@ -336,7 +416,9 @@ export async function runTranscriptionConsensus(params: {
   }
 
   if (runs === 1 && runsCompleted === 1) {
-    return { result: successfulRuns[0], runsCompleted: 1, runsAttempted: 1 };
+    // Single-run still needs dedup + boundary trim (Gemini produces overlapping chunks)
+    const result = mergeTranscriptRuns(successfulRuns);
+    return { result, runsCompleted: 1, runsAttempted: 1 };
   }
 
   const merged = mergeTranscriptRuns(successfulRuns);
