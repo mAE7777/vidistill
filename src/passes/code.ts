@@ -127,7 +127,7 @@ export async function runCodeReconstruction(params: RunCodeReconstructionParams)
       responseMimeType: 'application/json',
       ...(resolution !== undefined ? { mediaResolution: resolution } : {}),
       maxOutputTokens: 65536,
-      temperature: 0.0,
+      temperature: 1.0,
     },
   });
 

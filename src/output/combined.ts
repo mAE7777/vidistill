@@ -1,10 +1,12 @@
 import { changeTypeBadge, parseTimestamp, applySpeakerMapping } from '../lib/utils.js';
 import { isNearDuplicate, trimBoundaryOverlap } from '../core/transcript-consensus.js';
-import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote, SpeakerMapping } from '../types/index.js';
+import { tokenOverlap } from '../core/consensus.js';
+import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote, SpeakerMapping, SynthesisResult } from '../types/index.js';
 
 export interface WriteCombinedParams {
   pipelineResult: PipelineResult;
   speakerMapping?: SpeakerMapping;
+  synthesisResult?: SynthesisResult;
 }
 
 type EventKind = 'speech' | 'code' | 'visual';
@@ -14,6 +16,32 @@ interface TimelineEvent {
   kind: EventKind;
   segmentIndex: number;
   data: TranscriptEntry | CodeBlock | VisualNote;
+}
+
+function tokenCount(text: string): number {
+  return (text.match(/[\p{L}\p{N}_]+/gu) ?? []).length;
+}
+
+function collectSynthesisTexts(synthesisResult: SynthesisResult): string[] {
+  const texts: string[] = [];
+  if (synthesisResult.overview) texts.push(synthesisResult.overview);
+  for (const d of synthesisResult.key_decisions) texts.push(d.decision);
+  for (const c of synthesisResult.key_concepts) texts.push(c.explanation);
+  for (const a of synthesisResult.action_items) texts.push(a.item);
+  for (const t of synthesisResult.topics) {
+    if (t.summary) texts.push(t.summary);
+    for (const kp of t.key_points) texts.push(kp);
+  }
+  return texts.filter(t => t.length > 0);
+}
+
+function hasSynthesisOverlap(speechText: string, synthesisTexts: string[]): boolean {
+  const maxTokens = Math.max(tokenCount(speechText), 1);
+  for (const synthText of synthesisTexts) {
+    const overlap = tokenOverlap(speechText, synthText) / maxTokens;
+    if (overlap > 0.6) return true;
+  }
+  return false;
 }
 
 function renderSpeechEvent(entry: TranscriptEntry, speakerMapping?: SpeakerMapping): string {
@@ -63,8 +91,9 @@ function renderEvent(event: TimelineEvent, speakerMapping?: SpeakerMapping): str
 }
 
 export function writeCombined(params: WriteCombinedParams): string {
-  const { pipelineResult, speakerMapping } = params;
+  const { pipelineResult, speakerMapping, synthesisResult } = params;
   const { segments } = pipelineResult;
+  const synthTexts = synthesisResult != null ? collectSynthesisTexts(synthesisResult) : null;
 
   const sections: string[] = ['# Combined View', '', '_Chronological interleaving of speech, code, and visuals._', ''];
 
@@ -134,6 +163,13 @@ export function writeCombined(params: WriteCombinedParams): string {
     });
 
     for (const event of events) {
+      if (
+        event.kind === 'speech' &&
+        synthTexts != null &&
+        hasSynthesisOverlap((event.data as TranscriptEntry).text, synthTexts)
+      ) {
+        continue;
+      }
       sections.push(renderEvent(event, speakerMapping));
       sections.push('');
     }

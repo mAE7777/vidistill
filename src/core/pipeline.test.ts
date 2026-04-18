@@ -1124,7 +1124,7 @@ describe('runPipeline', () => {
     await promise;
 
     const synthArgs = mockRunSynthesis.mock.calls[0][0];
-    expect(synthArgs.model).toBe('gemini-2.5-pro');
+    expect(synthArgs.model).toBe('gemini-3-flash-preview');
     expect(synthArgs).not.toHaveProperty('fileUri');
     expect(synthArgs).not.toHaveProperty('mimeType');
   });
@@ -1167,7 +1167,7 @@ describe('runPipeline', () => {
 
     expect(mockRunCodeReconstruction).toHaveBeenCalledTimes(1);
     const codeArgs = mockRunCodeReconstruction.mock.calls[0][0] as unknown as Record<string, unknown>;
-    expect(codeArgs['model']).toBe('gemini-2.5-pro');
+    expect(codeArgs['model']).toBe('gemini-3-flash-preview');
   });
 
   it('interrupted pipeline lists pass3a in interruptedPasses when code strategy is active', async () => {
@@ -1424,6 +1424,106 @@ describe('runPipeline', () => {
     expect(mockReconcileSpeakers).toHaveBeenCalledTimes(1);
     expect(result.segments[0].pass1?.transcript_entries[0].speaker).toBe('SPEAKER_00');
     expect(result.segments[0].pass1?.speaker_summary[0].speaker_id).toBe('SPEAKER_00');
+  });
+
+  // --- LM dedup chunking tests ---
+
+  function makePass1WithEntries(segmentIndex: number, count: number): Pass1Result {
+    return {
+      segment_index: segmentIndex,
+      time_range: `${segmentIndex * 600}s - ${(segmentIndex + 1) * 600}s`,
+      transcript_entries: Array.from({ length: count }, (_, i) => ({
+        timestamp: `00:0${i % 60}:00`,
+        speaker: 'SPEAKER_00',
+        text: `Entry ${i} from segment ${segmentIndex}`,
+        tone: 'neutral' as const,
+      })),
+      speaker_summary: [{ speaker_id: 'SPEAKER_00', description: 'Main speaker' }],
+    };
+  }
+
+  function makeSingleSegmentConfig(entryCount: number) {
+    const client = makeClient();
+    const rateLimiter = makeRateLimiter();
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+    mockCreateSegmentPlan.mockReturnValue({
+      segments: [{ index: 0, startTime: 0, endTime: 600 }],
+      resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    });
+    mockMergeTranscriptResults.mockReturnValue(makePass1WithEntries(0, entryCount));
+    mockRunVisual.mockResolvedValue(makePass2(0));
+    return { client, rateLimiter };
+  }
+
+  it('LM dedup: 150 entries sends exactly 1 generate call (single chunk)', async () => {
+    const { client, rateLimiter } = makeSingleSegmentConfig(150);
+    vi.mocked(client.generate).mockResolvedValue({ duplicate_indices: [] } as any);
+
+    const promise = runPipeline(baseConfig({ client, rateLimiter }));
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(vi.mocked(client.generate)).toHaveBeenCalledTimes(1);
+  });
+
+  it('LM dedup: 350 entries sends exactly 2 generate calls (two chunks)', async () => {
+    const { client, rateLimiter } = makeSingleSegmentConfig(350);
+    vi.mocked(client.generate).mockResolvedValue({ duplicate_indices: [] } as any);
+
+    const promise = runPipeline(baseConfig({ client, rateLimiter }));
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(vi.mocked(client.generate)).toHaveBeenCalledTimes(2);
+  });
+
+  it('LM dedup: 350 entries — first chunk covers entries 0–199, second covers 180–349', async () => {
+    const { client, rateLimiter } = makeSingleSegmentConfig(350);
+    vi.mocked(client.generate).mockResolvedValue({ duplicate_indices: [] } as any);
+
+    const promise = runPipeline(baseConfig({ client, rateLimiter }));
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const calls = vi.mocked(client.generate).mock.calls;
+    expect(calls).toHaveLength(2);
+
+    const firstChunkText = calls[0][0].contents[0].parts![0].text as string;
+    const secondChunkText = calls[1][0].contents[0].parts![0].text as string;
+
+    // First chunk: 200 entries, [0] through [199]
+    expect(firstChunkText).toMatch(/^\[0\]/);
+    expect(firstChunkText).toMatch(/\[199\]/);
+    expect(firstChunkText).not.toMatch(/\[200\]/);
+
+    // Second chunk: 170 entries (350-180), [0] through [169]
+    expect(secondChunkText).toMatch(/^\[0\]/);
+    expect(secondChunkText).toMatch(/\[169\]/);
+    expect(secondChunkText).not.toMatch(/\[170\]/);
+  });
+
+  it('LM dedup: chunk failure does not prevent other chunks from processing', async () => {
+    const { client, rateLimiter } = makeSingleSegmentConfig(350);
+    // First chunk fails, second chunk returns index 0 as duplicate
+    vi.mocked(client.generate)
+      .mockRejectedValueOnce(new Error('chunk 0 failed'))
+      .mockResolvedValueOnce({ duplicate_indices: [0] } as any);
+
+    const promise = runPipeline(baseConfig({ client, rateLimiter }));
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    // Pipeline still completes
+    expect(result.segments).toHaveLength(1);
+    // Second chunk processed: entry at global index 180 (start=180, local=0) removed
+    // Original had 350 entries, 1 removed = 349
+    const remainingEntries = result.segments[0].pass1?.transcript_entries.length ?? 0;
+    expect(remainingEntries).toBe(349);
   });
 
   it('reconciliation failure logs warning and pipeline continues with original labels', async () => {

@@ -161,7 +161,7 @@ export async function runSynthesis(params: RunSynthesisParams): Promise<Synthesi
       responseSchema: SCHEMA_SYNTHESIS,
       responseMimeType: 'application/json',
       maxOutputTokens: 65536,
-      temperature: 0.1,
+      temperature: 1.0,
     },
   });
 

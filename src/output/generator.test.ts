@@ -51,7 +51,7 @@ vi.mock('./code-writer.js', () => ({
 vi.mock('./notes.js', () => ({ writeNotes: vi.fn(() => '# Notes') }));
 vi.mock('./people.js', () => ({ writePeople: vi.fn(() => '# People') }));
 vi.mock('./chat.js', () => ({ writeChat: vi.fn(() => '# Chat') }));
-vi.mock('./links.js', () => ({ writeLinks: vi.fn(() => '# Links') }));
+vi.mock('./links.js', () => ({ writeLinks: vi.fn(() => '# Links'), scanTranscriptForUrls: vi.fn(() => []) }));
 vi.mock('./action-items.js', () => ({ writeActionItems: vi.fn(() => '# Action Items') }));
 vi.mock('./metadata.js', () => ({
   writeMetadata: vi.fn(() => '{}'),

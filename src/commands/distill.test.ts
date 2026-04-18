@@ -101,7 +101,7 @@ vi.mock('../core/shutdown.js', () => ({
 }));
 
 vi.mock('../gemini/models.js', () => ({
-  MODELS: { flash: 'gemini-2.0-flash', pro: 'gemini-2.5-pro' },
+  MODELS: { flash: 'gemini-3.1-flash-lite-preview', pro: 'gemini-3-flash-preview' },
 }));
 
 import { runDistill } from './distill.js';

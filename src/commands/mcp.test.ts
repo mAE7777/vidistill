@@ -50,7 +50,7 @@ vi.mock('../output/generator.js', () => ({
 }));
 
 vi.mock('../gemini/models.js', () => ({
-  MODELS: { flash: 'gemini-2.0-flash' },
+  MODELS: { flash: 'gemini-3.1-flash-lite-preview' },
 }));
 
 describe('MCP server', () => {

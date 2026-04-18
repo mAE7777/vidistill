@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { writeCombined } from './combined.js';
-import type { PipelineResult, SegmentResult, Pass1Result, Pass2Result } from '../types/index.js';
+import type { PipelineResult, SegmentResult, Pass1Result, Pass2Result, SynthesisResult } from '../types/index.js';
 
 function makePipelineResult(segments: SegmentResult[]): PipelineResult {
   return { segments, passesRun: [], errors: [] };
@@ -220,5 +220,146 @@ describe('writeCombined', () => {
     expect(result).toContain('Segment 1');
     expect(result).toContain('Segment 2');
     expect(result).toContain('Second segment');
+  });
+
+  describe('synthesisResult dedup', () => {
+    const baseSynthesis: SynthesisResult = {
+      overview: '',
+      key_decisions: [],
+      key_concepts: [],
+      action_items: [],
+      questions_raised: [],
+      suggestions: [],
+      topics: [],
+      files_to_generate: [],
+      prerequisites: [],
+    };
+
+    it('tokenOverlap ratio exceeds 0.6 for near-duplicate speech vs synthesis text', () => {
+      // AC1: speech "React hooks let you use state in functional components"
+      //      synthesis "React hooks enable state usage in functional components"
+      // Shared tokens: React, hooks, state, in, functional, components = 6
+      // speechTokenCount = 9; overlap/max = 6/9 > 0.6
+      const speechText = 'React hooks let you use state in functional components';
+      const synthText = 'React hooks enable state usage in functional components';
+      const synthesis: SynthesisResult = {
+        ...baseSynthesis,
+        overview: synthText,
+      };
+      const pass1: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: speechText, tone: 'instructional' },
+        ],
+        speaker_summary: [],
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1, null)]),
+        synthesisResult: synthesis,
+      });
+      // High-overlap speech entry should be filtered out
+      expect(result).not.toContain(speechText);
+    });
+
+    it('speech entry with <60% overlap passes through unchanged', () => {
+      // AC2: low overlap — different content
+      const speechText = 'Now let me show the debugging workflow step by step';
+      const synthesis: SynthesisResult = {
+        ...baseSynthesis,
+        overview: 'React hooks enable state usage in functional components',
+      };
+      const pass1: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: speechText, tone: 'instructional' },
+        ],
+        speaker_summary: [],
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1, null)]),
+        synthesisResult: synthesis,
+      });
+      expect(result).toContain(speechText);
+    });
+
+    it('behaves identically to current behavior when synthesisResult is undefined', () => {
+      // AC3: no synthesisResult — speech should appear
+      const pass1: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: 'React hooks let you use state in functional components', tone: 'instructional' },
+        ],
+        speaker_summary: [],
+      };
+      const resultNoSynth = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1, null)]),
+      });
+      expect(resultNoSynth).toContain('React hooks let you use state in functional components');
+    });
+
+    it('checks all synthesis text fields: key_decisions, key_concepts, action_items, topics', () => {
+      const speechText = 'deploy to production on Friday using the rollout script';
+      const synthesis: SynthesisResult = {
+        ...baseSynthesis,
+        key_decisions: [{ decision: 'deploy to production on Friday using the rollout script', timestamp: '00:01:00', context: '' }],
+      };
+      const pass1: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: speechText, tone: 'instructional' },
+        ],
+        speaker_summary: [],
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1, null)]),
+        synthesisResult: synthesis,
+      });
+      // Exact match — high overlap — should be filtered
+      expect(result).not.toContain(speechText);
+    });
+
+    it('checks topic key_points for overlap', () => {
+      const speechText = 'use memoization to avoid expensive recalculations';
+      const synthesis: SynthesisResult = {
+        ...baseSynthesis,
+        topics: [{
+          title: 'Performance',
+          timestamps: [],
+          summary: '',
+          key_points: ['use memoization to avoid expensive recalculations'],
+        }],
+      };
+      const pass1: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:00:05', speaker: 'SPEAKER_00', text: speechText, tone: 'instructional' },
+        ],
+        speaker_summary: [],
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1, null)]),
+        synthesisResult: synthesis,
+      });
+      expect(result).not.toContain(speechText);
+    });
+
+    it('non-speech events (code, visual) are never filtered by synthesis overlap', () => {
+      const synthesis: SynthesisResult = {
+        ...baseSynthesis,
+        overview: 'app typescript const x',
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, null, PASS2)]),
+        synthesisResult: synthesis,
+      });
+      // Code block and visual note should still appear regardless of synthesis content
+      expect(result).toContain('const x = 1;');
+      expect(result).toContain('Architecture overview');
+    });
   });
 });

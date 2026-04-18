@@ -1,9 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { writeLinks } from './links.js';
-import type { SegmentResult, ChatExtraction } from '../types/index.js';
+import { writeLinks, scanTranscriptForUrls } from './links.js';
+import type { SegmentResult, ChatExtraction, Pass1Result } from '../types/index.js';
 
-function makeSegment(index: number, pass3c: ChatExtraction | null = null): SegmentResult {
-  return { index, pass1: null, pass2: null, pass3c };
+function makeSegment(index: number, pass3c: ChatExtraction | null = null, pass1: Pass1Result | null = null): SegmentResult {
+  return { index, pass1, pass2: null, pass3c };
+}
+
+function makePass1(entries: Array<{ timestamp: string; text: string }>): Pass1Result {
+  return {
+    segment_index: 0,
+    time_range: '0:00-1:00',
+    transcript_entries: entries.map((e) => ({ timestamp: e.timestamp, speaker: 'SPEAKER_00', text: e.text, tone: 'neutral' })),
+    speaker_summary: [],
+  };
 }
 
 const LINKS_CHAT: ChatExtraction = {
@@ -122,5 +131,92 @@ describe('writeLinks', () => {
     const seg = makeSegment(0, LINKS_CHAT);
     const result = writeLinks({ segments: [seg] });
     expect(typeof result).toBe('string');
+  });
+
+  it('extracts URL from transcript when pass3c did not run', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'check out https://example.com/docs for details' }]);
+    const seg = makeSegment(0, null, pass1);
+    const result = writeLinks({ segments: [seg] });
+    expect(result).toContain('https://example.com/docs');
+  });
+
+  it('strips trailing punctuation from transcript URLs', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'visit https://example.com/docs.' }]);
+    const seg = makeSegment(0, null, pass1);
+    const result = writeLinks({ segments: [seg] });
+    expect(result).toContain('https://example.com/docs');
+    expect(result).not.toContain('https://example.com/docs.');
+  });
+
+  it('deduplicates URL from transcript when pass3c already has it, preserving pass3c context', () => {
+    const pass3c: ChatExtraction = {
+      messages: [],
+      links: [{ url: 'https://github.com/foo', context: 'Source repo', timestamp: '00:02:00' }],
+    };
+    const pass1 = makePass1([{ timestamp: '00:03:00', text: 'see https://github.com/foo for code' }]);
+    const seg = makeSegment(0, pass3c, pass1);
+    const result = writeLinks({ segments: [seg] });
+    // URL appears only once
+    const matches = (result ?? '').match(/https:\/\/github\.com\/foo/g);
+    expect(matches).toHaveLength(1);
+    // pass3c context preserved
+    expect(result).toContain('Source repo');
+  });
+
+  it('returns null when no URLs in transcript and no pass3c', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'no links here at all' }]);
+    const seg = makeSegment(0, null, pass1);
+    expect(writeLinks({ segments: [seg] })).toBeNull();
+  });
+
+  it('returns null when no pass3c and no pass1', () => {
+    const seg = makeSegment(0, null, null);
+    expect(writeLinks({ segments: [seg] })).toBeNull();
+  });
+});
+
+describe('scanTranscriptForUrls', () => {
+  it('returns empty array for segments with no pass1', () => {
+    const seg = makeSegment(0);
+    expect(scanTranscriptForUrls([seg])).toHaveLength(0);
+  });
+
+  it('returns empty array when transcript has no URLs', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'hello world, no links' }]);
+    const seg = makeSegment(0, null, pass1);
+    expect(scanTranscriptForUrls([seg])).toHaveLength(0);
+  });
+
+  it('extracts a URL from transcript text', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'see https://example.com/docs for details' }]);
+    const seg = makeSegment(0, null, pass1);
+    const links = scanTranscriptForUrls([seg]);
+    expect(links).toHaveLength(1);
+    expect(links[0].url).toBe('https://example.com/docs');
+    expect(links[0].context).toBe('');
+    expect(links[0].timestamp).toBe('00:01:00');
+  });
+
+  it('strips trailing period from URL', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'go to https://example.com.' }]);
+    const seg = makeSegment(0, null, pass1);
+    const links = scanTranscriptForUrls([seg]);
+    expect(links[0].url).toBe('https://example.com');
+  });
+
+  it('strips trailing comma from URL', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'try https://example.com/path, and also' }]);
+    const seg = makeSegment(0, null, pass1);
+    const links = scanTranscriptForUrls([seg]);
+    expect(links[0].url).toBe('https://example.com/path');
+  });
+
+  it('extracts multiple URLs from a single entry', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'see https://foo.com and https://bar.com' }]);
+    const seg = makeSegment(0, null, pass1);
+    const links = scanTranscriptForUrls([seg]);
+    expect(links).toHaveLength(2);
+    expect(links.map((l) => l.url)).toContain('https://foo.com');
+    expect(links.map((l) => l.url)).toContain('https://bar.com');
   });
 });

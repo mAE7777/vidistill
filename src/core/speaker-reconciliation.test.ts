@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reconcileSpeakers } from './speaker-reconciliation.js';
+import { reconcileSpeakers, jaccardOverlap } from './speaker-reconciliation.js';
 import type { Pass1Result, TranscriptEntry, SpeakerInfo } from '../types/index.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -322,5 +322,136 @@ describe('reconcileSpeakers', () => {
       // Total: Alice + unnamed0 + unnamed1 = 3
       expect(result.canonicalSpeakers).toHaveLength(3);
     });
+  });
+});
+
+// ─── jaccardOverlap unit tests ───────────────────────────────────────────────
+
+describe('jaccardOverlap', () => {
+  it('returns 0.67 for ["dr", "sarah", "chen"] vs ["sarah", "chen"]', () => {
+    const result = jaccardOverlap('Dr. Sarah Chen', 'Sarah Chen');
+    // tokens: ["dr.", "sarah", "chen"] vs ["sarah", "chen"]
+    // intersection: {"sarah", "chen"} = 2
+    // union: {"dr.", "sarah", "chen"} = 3
+    // 2/3 ≈ 0.667
+    expect(result).toBeCloseTo(2 / 3, 5);
+  });
+
+  it('returns 1.0 for identical strings', () => {
+    expect(jaccardOverlap('Sarah Chen', 'Sarah Chen')).toBe(1);
+  });
+
+  it('returns 0 for completely disjoint names', () => {
+    expect(jaccardOverlap('Alice', 'Bob')).toBe(0);
+  });
+
+  it('returns 0.5 for one shared token out of two distinct', () => {
+    // ["alice", "smith"] vs ["alice", "jones"] → intersection 1, union 3 → 1/3
+    // Actually: tokens A = {"alice","smith"}, B = {"alice","jones"}, intersection = 1, union = 3
+    expect(jaccardOverlap('Alice Smith', 'Alice Jones')).toBeCloseTo(1 / 3, 5);
+  });
+
+  it('is case-insensitive', () => {
+    expect(jaccardOverlap('SARAH CHEN', 'sarah chen')).toBe(1);
+  });
+});
+
+// ─── Jaccard fuzzy merge integration tests ───────────────────────────────────
+
+describe('reconcileSpeakers — fuzzy Jaccard merge', () => {
+  // AC 1: Jaccard >= 0.5, no temporal overlap → merge
+  it('merges "Dr. Sarah Chen" and "Sarah Chen" when no temporal overlap', () => {
+    const seg0 = makePass1(
+      0,
+      [makeSpeakerInfo('SPEAKER_00 (Dr. Sarah Chen)', 'professor')],
+      [{ timestamp: '00:01:00', speaker: 'SPEAKER_00 (Dr. Sarah Chen)', text: 'hello', tone: 'neutral' }],
+    );
+    const seg1 = makePass1(
+      1,
+      [makeSpeakerInfo('SPEAKER_01 (Sarah Chen)', 'same person')],
+      [{ timestamp: '00:05:30', speaker: 'SPEAKER_01 (Sarah Chen)', text: 'world', tone: 'neutral' }],
+    );
+
+    const result = reconcileSpeakers({ pass1Results: [seg0, seg1] });
+
+    const canon0 = result.mapping['0:SPEAKER_00 (Dr. Sarah Chen)'];
+    const canon1 = result.mapping['1:SPEAKER_01 (Sarah Chen)'];
+
+    // Both should resolve to the same canonical label
+    expect(canon0).toBe(canon1);
+    // Only one canonical speaker
+    expect(result.canonicalSpeakers).toHaveLength(1);
+  });
+
+  // AC 2: Jaccard >= 0.5 but temporal overlap → reject merge
+  it('does NOT merge speakers with Jaccard >= 0.5 when they speak at the same timestamp', () => {
+    const seg0 = makePass1(
+      0,
+      [makeSpeakerInfo('SPEAKER_00 (Dr. Sarah Chen)', 'professor')],
+      [{ timestamp: '00:05:30', speaker: 'SPEAKER_00 (Dr. Sarah Chen)', text: 'hello', tone: 'neutral' }],
+    );
+    const seg1 = makePass1(
+      1,
+      [makeSpeakerInfo('SPEAKER_01 (Sarah Chen)', 'same person?')],
+      [{ timestamp: '00:05:30', speaker: 'SPEAKER_01 (Sarah Chen)', text: 'world', tone: 'neutral' }],
+    );
+
+    const result = reconcileSpeakers({ pass1Results: [seg0, seg1] });
+
+    const canon0 = result.mapping['0:SPEAKER_00 (Dr. Sarah Chen)'];
+    const canon1 = result.mapping['1:SPEAKER_01 (Sarah Chen)'];
+
+    // Must remain distinct
+    expect(canon0).not.toBe(canon1);
+    expect(result.canonicalSpeakers).toHaveLength(2);
+  });
+
+  // AC 3: merged group entries remapped to first group's canonical ID
+  it('remaps second group entries to first group canonical ID after fuzzy merge', () => {
+    const seg0 = makePass1(
+      0,
+      [makeSpeakerInfo('SPEAKER_00 (Dr. Sarah Chen)', 'host')],
+      [{ timestamp: '00:02:00', speaker: 'SPEAKER_00 (Dr. Sarah Chen)', text: 'intro', tone: 'neutral' }],
+    );
+    const seg1 = makePass1(
+      1,
+      [makeSpeakerInfo('SPEAKER_01 (Sarah Chen)', 'host continued')],
+      [{ timestamp: '00:12:00', speaker: 'SPEAKER_01 (Sarah Chen)', text: 'part 2', tone: 'neutral' }],
+    );
+
+    const result = reconcileSpeakers({ pass1Results: [seg0, seg1] });
+
+    // The canonical label should be the first-seen group's label
+    const canon = result.mapping['0:SPEAKER_00 (Dr. Sarah Chen)'];
+    expect(result.mapping['1:SPEAKER_01 (Sarah Chen)']).toBe(canon);
+    // Only one speaker in output
+    expect(result.canonicalSpeakers).toHaveLength(1);
+    // The surviving canonical label should contain "Dr. Sarah Chen" (first seen)
+    expect(canon).toContain('Dr. Sarah Chen');
+  });
+
+  // AC 4: no fuzzy matches → identical to current behavior
+  it('produces identical result when no fuzzy matches exist (completely different names)', () => {
+    const seg0 = makePass1(
+      0,
+      [makeSpeakerInfo('SPEAKER_00 (Alice Smith)', 'host')],
+      [makeEntry('SPEAKER_00 (Alice Smith)')],
+    );
+    const seg1 = makePass1(
+      1,
+      [makeSpeakerInfo('SPEAKER_01 (Bob Jones)', 'guest')],
+      [makeEntry('SPEAKER_01 (Bob Jones)')],
+    );
+
+    const result = reconcileSpeakers({ pass1Results: [seg0, seg1] });
+
+    // No merge — two distinct canonical speakers
+    expect(result.canonicalSpeakers).toHaveLength(2);
+    expect(result.mapping['0:SPEAKER_00 (Alice Smith)']).toContain('Alice Smith');
+    expect(result.mapping['1:SPEAKER_01 (Bob Jones)']).toContain('Bob Jones');
+    // They must not be equal
+    expect(result.mapping['0:SPEAKER_00 (Alice Smith)']).not.toBe(
+      result.mapping['1:SPEAKER_01 (Bob Jones)'],
+    );
   });
 });

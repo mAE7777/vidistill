@@ -1,4 +1,5 @@
 import type { Pass1Result, ReconciliationResult, CanonicalSpeaker } from '../types/index.js';
+import { parseTimestamp } from '../lib/utils.js';
 
 const SPEAKER_NAME_RE = /^(SPEAKER_\d+)\s*\((.+)\)$/;
 
@@ -20,6 +21,66 @@ function formatLabel(base: string, originalName: string | null): string {
   return originalName != null ? `${base} (${originalName})` : base;
 }
 
+/** Compute Jaccard token overlap between two name strings. */
+export function jaccardOverlap(a: string, b: string): number {
+  const tokensA = new Set(a.toLowerCase().split(/\s+/).filter(t => t.length > 0));
+  const tokensB = new Set(b.toLowerCase().split(/\s+/).filter(t => t.length > 0));
+  if (tokensA.size === 0 && tokensB.size === 0) return 1;
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  let intersectionCount = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) intersectionCount++;
+  }
+  const unionSize = tokensA.size + tokensB.size - intersectionCount;
+  return intersectionCount / unionSize;
+}
+
+interface NamedGroup {
+  canonicalIndex: number;
+  originalName: string;
+  descriptions: string[];
+  /** Set of segment indices this group appears in */
+  segmentIndices: Set<number>;
+}
+
+/** Check whether two named groups have any temporal overlap based on transcript entry timestamps. */
+function speakersOverlapTemporally(
+  groupAName: string,
+  groupBName: string,
+  namedGroups: Map<string, NamedGroup>,
+  pass1Results: (Pass1Result | null)[],
+): boolean {
+  const groupA = namedGroups.get(groupAName);
+  const groupB = namedGroups.get(groupBName);
+  if (!groupA || !groupB) return false;
+
+  // Collect timestamps (in seconds) for each group's entries
+  const timestampsA = new Set<number>();
+  const timestampsB = new Set<number>();
+
+  for (let segIdx = 0; segIdx < pass1Results.length; segIdx++) {
+    const result = pass1Results[segIdx];
+    if (result == null) continue;
+
+    for (const entry of result.transcript_entries ?? []) {
+      const { name } = parseLabel(entry.speaker);
+      if (name == null) continue;
+      const secs = parseTimestamp(entry.timestamp);
+      if (name === groupAName) {
+        timestampsA.add(secs);
+      } else if (name === groupBName) {
+        timestampsB.add(secs);
+      }
+    }
+  }
+
+  // Check for any same-second collision
+  for (const t of timestampsA) {
+    if (timestampsB.has(t)) return true;
+  }
+  return false;
+}
+
 export interface ReconcileSpeakersParams {
   pass1Results: (Pass1Result | null)[];
 }
@@ -32,17 +93,16 @@ export interface ReconcileSpeakersParams {
  * 2. Extract names from SPEAKER_XX (Name) patterns (case-insensitive match key).
  * 3. Group named speakers across segments by extracted name — same name → same person.
  * 4. Unnamed speakers are unique per segment (no cross-segment grouping).
- * 5. Assign canonical IDs sequentially (SPEAKER_00, SPEAKER_01, …) by first appearance.
- * 6. Return mapping from "segmentIndex:originalLabel" → canonicalLabel, plus canonical speaker list.
+ * 5. Fuzzy merge: for pairs of unmerged named groups, compute Jaccard token overlap;
+ *    if >= 0.5 and no temporal overlap, merge the smaller group into the larger.
+ * 6. Assign canonical IDs sequentially (SPEAKER_00, SPEAKER_01, …) by first appearance.
+ * 7. Return mapping from "segmentIndex:originalLabel" → canonicalLabel, plus canonical speaker list.
  */
 export function reconcileSpeakers(params: ReconcileSpeakersParams): ReconciliationResult {
   const { pass1Results } = params;
 
-  // name (lowercase) → { canonicalIndex, originalName (first seen casing), descriptions[] }
-  const namedGroups = new Map<
-    string,
-    { canonicalIndex: number; originalName: string; descriptions: string[] }
-  >();
+  // name (lowercase) → { canonicalIndex, originalName (first seen casing), descriptions[], segmentIndices }
+  const namedGroups = new Map<string, NamedGroup>();
 
   // key "segmentIndex:originalLabel" for unnamed speakers →
   // { canonicalIndex, descriptions[] }
@@ -61,10 +121,12 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
     name: string,
     originalName: string,
     description: string,
+    segIdx: number,
   ): number {
     const existing = namedGroups.get(name);
     if (existing) {
       if (description) existing.descriptions.push(description);
+      existing.segmentIndices.add(segIdx);
       return existing.canonicalIndex;
     }
     const idx = nextCanonicalIndex++;
@@ -72,6 +134,7 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
       canonicalIndex: idx,
       originalName,
       descriptions: description ? [description] : [],
+      segmentIndices: new Set([segIdx]),
     });
     return idx;
   }
@@ -124,7 +187,7 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
 
       let canonicalIdx: number;
       if (name != null) {
-        canonicalIdx = getOrAssignNamed(name, /* originalName */ parseOriginalName(label), description);
+        canonicalIdx = getOrAssignNamed(name, /* originalName */ parseOriginalName(label), description, segIdx);
       } else {
         canonicalIdx = getOrAssignUnnamed(mapKey, description);
       }
@@ -138,24 +201,110 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
     return { mapping: {}, canonicalSpeakers: [] };
   }
 
-  // Build ordered canonical speakers array
-  // Slot count = nextCanonicalIndex
+  // ── Fuzzy merge pass ──────────────────────────────────────────────────────
+  // For each pair of named groups that were NOT already exact-matched,
+  // check Jaccard overlap on name tokens. If >= 0.5 and no temporal overlap,
+  // merge the group with the higher canonical index into the group with the lower one.
+
+  // mergedInto[canonicalIndex] = survivingCanonicalIndex
+  const mergedInto = new Map<number, number>();
+
+  /** Resolve the final canonical index after potential chains of merges. */
+  function resolveIndex(idx: number): number {
+    let current = idx;
+    while (mergedInto.has(current)) {
+      current = mergedInto.get(current)!;
+    }
+    return current;
+  }
+
+  const namedGroupKeys = Array.from(namedGroups.keys());
+
+  for (let i = 0; i < namedGroupKeys.length; i++) {
+    for (let j = i + 1; j < namedGroupKeys.length; j++) {
+      const nameA = namedGroupKeys[i];
+      const nameB = namedGroupKeys[j];
+
+      // Only consider groups that are currently unmerged with each other
+      const groupA = namedGroups.get(nameA)!;
+      const groupB = namedGroups.get(nameB)!;
+      const idxA = resolveIndex(groupA.canonicalIndex);
+      const idxB = resolveIndex(groupB.canonicalIndex);
+      if (idxA === idxB) continue; // already merged
+
+      const overlap = jaccardOverlap(nameA, nameB);
+      if (overlap < 0.5) continue;
+
+      if (speakersOverlapTemporally(nameA, nameB, namedGroups, pass1Results)) continue;
+
+      // Merge: absorb the group with the later canonical index into the earlier one
+      const survivingIdx = Math.min(idxA, idxB);
+      const absorbedIdx = Math.max(idxA, idxB);
+      mergedInto.set(absorbedIdx, survivingIdx);
+
+      // Find which named group key corresponds to the absorbed canonical index and
+      // transfer its descriptions into the surviving group.
+      // Identify surviving and absorbed groups by their resolved indices.
+      const survivingName = idxA <= idxB ? nameA : nameB;
+      const absorbedName = idxA <= idxB ? nameB : nameA;
+      const survivingGroup = namedGroups.get(survivingName)!;
+      const absorbedGroup = namedGroups.get(absorbedName)!;
+      survivingGroup.descriptions.push(...absorbedGroup.descriptions);
+      for (const si of absorbedGroup.segmentIndices) {
+        survivingGroup.segmentIndices.add(si);
+      }
+    }
+  }
+
+  // Remap rawMapping entries that point to absorbed canonical indices
+  if (mergedInto.size > 0) {
+    for (const [mapKey, canonicalIdx] of rawMapping) {
+      const resolved = resolveIndex(canonicalIdx);
+      if (resolved !== canonicalIdx) {
+        rawMapping.set(mapKey, resolved);
+      }
+    }
+  }
+
+  // Compact canonical indices: remove gaps left by merges
+  // Build a sorted list of surviving indices in order of first assignment
+  const survivingIndices = new Set<number>();
+  for (let i = 0; i < nextCanonicalIndex; i++) {
+    survivingIndices.add(resolveIndex(i));
+  }
+  // Map old index → new compact index (preserving order)
+  const compactMap = new Map<number, number>();
+  const sortedSurviving = Array.from(survivingIndices).sort((a, b) => a - b);
+  sortedSurviving.forEach((oldIdx, newIdx) => {
+    compactMap.set(oldIdx, newIdx);
+  });
+
+  // Build ordered canonical speakers array using only surviving groups
   const slots: Array<{ originalName: string | null; descriptions: string[] }> = Array.from(
-    { length: nextCanonicalIndex },
+    { length: sortedSurviving.length },
     () => ({ originalName: null, descriptions: [] }),
   );
 
   for (const [, group] of namedGroups) {
-    slots[group.canonicalIndex] = {
-      originalName: group.originalName,
-      descriptions: group.descriptions,
-    };
+    const resolvedIdx = resolveIndex(group.canonicalIndex);
+    const compactIdx = compactMap.get(resolvedIdx)!;
+    // Only write slot for the "owner" of this resolved index (avoid double-write)
+    if (slots[compactIdx].originalName === null && slots[compactIdx].descriptions.length === 0) {
+      slots[compactIdx] = {
+        originalName: group.originalName,
+        descriptions: group.descriptions,
+      };
+    }
   }
   for (const [, group] of unnamedGroups) {
-    slots[group.canonicalIndex] = {
-      originalName: null,
-      descriptions: group.descriptions,
-    };
+    const resolvedIdx = resolveIndex(group.canonicalIndex);
+    const compactIdx = compactMap.get(resolvedIdx)!;
+    if (slots[compactIdx].originalName === null && slots[compactIdx].descriptions.length === 0) {
+      slots[compactIdx] = {
+        originalName: null,
+        descriptions: group.descriptions,
+      };
+    }
   }
 
   const canonicalSpeakers: CanonicalSpeaker[] = slots.map((slot, idx) => ({
@@ -166,7 +315,8 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
   // Build string mapping from "segIdx:originalLabel" → canonical label
   const mapping: Record<string, string> = {};
   for (const [mapKey, canonicalIdx] of rawMapping) {
-    mapping[mapKey] = canonicalSpeakers[canonicalIdx].label;
+    const compactIdx = compactMap.get(canonicalIdx)!;
+    mapping[mapKey] = canonicalSpeakers[compactIdx].label;
   }
 
   return { mapping, canonicalSpeakers };

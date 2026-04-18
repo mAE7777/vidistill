@@ -21,7 +21,7 @@ export class GeminiClient {
 
   async validateKey(): Promise<boolean> {
     try {
-      await this.ai.models.get({ model: 'gemini-2.5-flash' });
+      await this.ai.models.get({ model: 'gemini-3.1-flash-lite-preview' });
       return true;
     } catch {
       return false;

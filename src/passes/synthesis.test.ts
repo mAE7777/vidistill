@@ -277,7 +277,7 @@ describe('runSynthesis', () => {
     expect(call.model).toBe('gemini-2.5-flash');
     expect(call.config.responseMimeType).toBe('application/json');
     expect(call.config.maxOutputTokens).toBe(65536);
-    expect(call.config.temperature).toBe(0.1);
+    expect(call.config.temperature).toBe(1.0);
   });
 
   it('compiles segment transcript entries into context text', async () => {

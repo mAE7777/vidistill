@@ -78,6 +78,17 @@ const DEFAULT_PROFILE: VideoProfile = {
   },
 };
 
+function chunkEntries<T>(entries: T[], windowSize: number, overlap: number): { start: number; items: T[] }[] {
+  if (entries.length === 0) return [];
+  const step = windowSize - overlap;
+  const chunks: { start: number; items: T[] }[] = [];
+  for (let start = 0; start < entries.length; start += step) {
+    chunks.push({ start, items: entries.slice(start, start + windowSize) });
+    if (start + windowSize >= entries.length) break;
+  }
+  return chunks;
+}
+
 export async function runPipeline(config: RunPipelineConfig): Promise<PipelineResult> {
   const {
     client,
@@ -399,50 +410,57 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   }
 
   if (allEntries.length > 20) {
-    try {
-      const numbered = allEntries.map((e, i) =>
-        `[${i}] ${e.entry.timestamp} ${e.entry.speaker}: ${e.entry.text}`
-      ).join('\n');
+    const chunks = chunkEntries(allEntries, 200, 20);
+    const toRemove = new Set<number>();
 
-      const dedupResult = await rateLimiter.execute(
-        () => client.generate({
-          model: MODELS.flash,
-          contents: [{ role: 'user', parts: [{ text: numbered }] }],
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION_DEDUP,
-            responseMimeType: 'application/json',
-            responseSchema: SCHEMA_DEDUP_REVIEW,
-            temperature: 0,
-          },
-        }),
-        { onWait },
-      );
+    for (const chunk of chunks) {
+      try {
+        const numbered = chunk.items.map((e, i) =>
+          `[${i}] ${e.entry.timestamp} ${e.entry.speaker}: ${e.entry.text}`
+        ).join('\n');
 
-      const parsed = dedupResult as { duplicate_indices?: unknown[] } | null;
-      if (parsed != null && Array.isArray(parsed.duplicate_indices)) {
-        const indices = parsed.duplicate_indices;
-        const toRemove = new Set(
-          indices.filter((v): v is number => typeof v === 'number' && v >= 0 && v < allEntries.length),
+        const dedupResult = await rateLimiter.execute(
+          () => client.generate({
+            model: MODELS.flash,
+            contents: [{ role: 'user', parts: [{ text: numbered }] }],
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION_DEDUP,
+              responseMimeType: 'application/json',
+              responseSchema: SCHEMA_DEDUP_REVIEW,
+              temperature: 1.0,
+            },
+          }),
+          { onWait },
         );
 
-        if (toRemove.size > 0) {
-          // Build per-segment removal sets
-          const segRemovals = new Map<number, Set<number>>();
-          for (const globalIdx of toRemove) {
-            const { segIdx, entryIdx } = allEntries[globalIdx];
-            if (!segRemovals.has(segIdx)) segRemovals.set(segIdx, new Set());
-            segRemovals.get(segIdx)!.add(entryIdx);
-          }
-
-          for (const [segIdx, entryIndices] of segRemovals) {
-            const p1 = results[segIdx].pass1;
-            if (p1 == null) continue;
-            p1.transcript_entries = p1.transcript_entries.filter((_, i) => !entryIndices.has(i));
+        const parsed = dedupResult as { duplicate_indices?: unknown[] } | null;
+        if (parsed != null && Array.isArray(parsed.duplicate_indices)) {
+          for (const v of parsed.duplicate_indices) {
+            if (typeof v === 'number' && v >= 0 && v < chunk.items.length) {
+              toRemove.add(chunk.start + v);
+            }
           }
         }
+      } catch {
+        // LM dedup is best-effort — don't fail the pipeline
       }
-    } catch {
-      // LM dedup is best-effort — don't fail the pipeline
+    }
+
+    if (toRemove.size > 0) {
+      // Build per-segment removal sets
+      const segRemovals = new Map<number, Set<number>>();
+      for (const globalIdx of toRemove) {
+        if (globalIdx >= allEntries.length) continue;
+        const { segIdx, entryIdx } = allEntries[globalIdx];
+        if (!segRemovals.has(segIdx)) segRemovals.set(segIdx, new Set());
+        segRemovals.get(segIdx)!.add(entryIdx);
+      }
+
+      for (const [segIdx, entryIndices] of segRemovals) {
+        const p1 = results[segIdx].pass1;
+        if (p1 == null) continue;
+        p1.transcript_entries = p1.transcript_entries.filter((_, i) => !entryIndices.has(i));
+      }
     }
   }
 

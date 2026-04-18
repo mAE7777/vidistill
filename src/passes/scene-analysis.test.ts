@@ -166,7 +166,7 @@ describe('runSceneAnalysis', () => {
     expect(call.config.mediaResolution).toBe(MediaResolution.MEDIA_RESOLUTION_MEDIUM);
   });
 
-  it('uses maxOutputTokens 8192 and temperature 0.2', async () => {
+  it('uses maxOutputTokens 8192 and temperature 1.0', async () => {
     const client = makeClient(CODING_PROFILE);
     await runSceneAnalysis({
       client,
@@ -178,7 +178,7 @@ describe('runSceneAnalysis', () => {
 
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(call.config.maxOutputTokens).toBe(8192);
-    expect(call.config.temperature).toBe(0.2);
+    expect(call.config.temperature).toBe(1.0);
   });
 
   it('throws "Empty response from Gemini Pass 0" when type field is missing', async () => {

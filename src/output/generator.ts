@@ -22,7 +22,7 @@ import { writeCodeFiles } from './code-writer.js';
 import { writeNotes } from './notes.js';
 import { writePeople } from './people.js';
 import { writeChat } from './chat.js';
-import { writeLinks } from './links.js';
+import { writeLinks, scanTranscriptForUrls } from './links.js';
 import { writeActionItems } from './action-items.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
 import { readJsonFile, buildExpandedMapping } from '../lib/utils.js';
@@ -61,6 +61,8 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   if (hasPass3a) optional.add('code/');
   if (hasPass3c) {
     optional.add('chat.md');
+    optional.add('links.md');
+  } else if (scanTranscriptForUrls(segments).length > 0) {
     optional.add('links.md');
   }
   if (hasPass3d) {
@@ -112,7 +114,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2b: combined.md — conditional
   if (filesToGenerate.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -343,7 +345,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);

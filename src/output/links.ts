@@ -8,6 +8,9 @@ interface CategorizedLink extends ExtractedLink {
   category: string;
 }
 
+const URL_REGEX = /https?:\/\/[^\s)<>"\\]+/g;
+const TRAILING_PUNCT = /[.,;:!?)+]+$/;
+
 const CATEGORY_PATTERNS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /github\.com/i, category: 'GitHub' },
   { pattern: /npmjs\.com|npm\.im/i, category: 'npm' },
@@ -26,6 +29,22 @@ function categorizeUrl(url: string): string {
     if (pattern.test(url)) return category;
   }
   return DEFAULT_CATEGORY;
+}
+
+export function scanTranscriptForUrls(segments: SegmentResult[]): ExtractedLink[] {
+  const links: ExtractedLink[] = [];
+  for (const seg of segments) {
+    if (seg.pass1 == null) continue;
+    for (const entry of seg.pass1.transcript_entries) {
+      const matches = entry.text.match(URL_REGEX);
+      if (matches == null) continue;
+      for (const raw of matches) {
+        const url = raw.replace(TRAILING_PUNCT, '');
+        links.push({ url, context: '', timestamp: entry.timestamp });
+      }
+    }
+  }
+  return links;
 }
 
 function collectAllLinks(segments: SegmentResult[]): ExtractedLink[] {
@@ -60,7 +79,8 @@ function groupByCategory(links: CategorizedLink[]): Map<string, CategorizedLink[
 export function writeLinks(params: WriteLinksParams): string | null {
   const { segments } = params;
 
-  const rawLinks = collectAllLinks(segments);
+  // pass3c links first (they have context), then transcript-scanned links as fallback
+  const rawLinks = [...collectAllLinks(segments), ...scanTranscriptForUrls(segments)];
   if (rawLinks.length === 0) return null;
 
   const deduped = deduplicateLinks(rawLinks);
