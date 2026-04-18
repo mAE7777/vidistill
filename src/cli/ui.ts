@@ -19,19 +19,29 @@ export function showConfigBox(config: {
   outputName?: string;
   videoType?: string;
   lang?: string;
+  batchFile?: string;
+  batchCount?: number;
 }): void {
-  const lines = [
-    `Video:   ${config.input}`,
-    `Context: ${config.context ?? '(none)'}`,
-    `Name:    ${config.outputName ?? '(auto-detect)'}`,
-    `Output:  ${config.output}`,
-  ];
-  if (config.videoType === 'audio') {
-    lines.push('Type:    Audio (visual analysis skipped)');
-  }
-  if (config.lang != null && config.lang !== 'en') {
-    const langName = LANGUAGE_NAMES[config.lang] ?? config.lang;
-    lines.push(`Language: ${langName} (${config.lang})`);
+  const lines = config.batchFile != null
+    ? [
+        `Batch:   ${config.batchFile}`,
+        `Items:   ${config.batchCount != null ? String(config.batchCount) : '(unknown)'}`,
+        `Output:  ${config.output}`,
+      ]
+    : [
+        `Video:   ${config.input}`,
+        `Context: ${config.context ?? '(none)'}`,
+        `Name:    ${config.outputName ?? '(auto-detect)'}`,
+        `Output:  ${config.output}`,
+      ];
+  if (config.batchFile == null) {
+    if (config.videoType === 'audio') {
+      lines.push('Type:    Audio (visual analysis skipped)');
+    }
+    if (config.lang != null && config.lang !== 'en') {
+      const langName = LANGUAGE_NAMES[config.lang] ?? config.lang;
+      lines.push(`Language: ${langName} (${config.lang})`);
+    }
   }
   note(lines.join('\n'), 'Configuration');
 }

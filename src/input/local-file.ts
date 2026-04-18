@@ -165,7 +165,7 @@ function tempPath(suffix: string): string {
   return join(tmpdir(), `vidistill-${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`);
 }
 
-function tryUnlink(filePath: string): void {
+export function tryUnlink(filePath: string): void {
   try {
     unlinkSync(filePath);
   } catch {

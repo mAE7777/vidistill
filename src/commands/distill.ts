@@ -2,7 +2,7 @@ import { log, cancel } from '@clack/prompts';
 import pc from 'picocolors';
 import { basename, extname, resolve, join } from 'path';
 import { existsSync, openSync, readSync, closeSync } from 'fs';
-import { readdir, rm } from 'fs/promises';
+import { readdir, rm, writeFile } from 'fs/promises';
 import { showConfigBox } from '../cli/ui.js';
 import { promptVideoSource, promptContext, promptOutputName, promptConfirmation } from '../cli/prompts.js';
 import { resolveApiKey } from '../cli/config.js';
@@ -12,11 +12,14 @@ import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
 import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
+import { handleRemoteUrl } from '../input/remote.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
 import { generateOutput, slugify } from '../output/generator.js';
 import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
+import { parseBatchFile, generateBatchIndex } from '../core/batch.js';
+import type { BatchResultItem } from '../core/batch.js';
 
 /**
  * Quick audio detection from magic bytes for pre-pipeline display purposes.
@@ -72,11 +75,213 @@ export interface DistillArgs {
   context?: string;
   output: string;
   lang?: string;
+  batch?: string;
+}
+
+async function processSingleItem(
+  rawInput: string,
+  context: string,
+  outputDir: string,
+  lang: string | undefined,
+  apiKey: string,
+  rateLimiter: RateLimiter,
+  videoTitle?: string,
+): Promise<{ title: string; duration: number; finalOutputDir: string }> {
+  const resolved = resolveInput(rawInput);
+  const client = new GeminiClient(apiKey);
+
+  let fileUri: string;
+  let mimeType: string;
+  let duration: number;
+  let resolvedTitle: string;
+  let uploadedFileNames: string[] = [];
+  let ytAuthor: string | undefined;
+
+  if (resolved.type === 'youtube') {
+    const result = await handleYouTube(resolved.value, client);
+    fileUri = result.fileUri;
+    mimeType = result.mimeType;
+    try {
+      duration = await detectDuration({
+        ytDlpDuration: result.duration,
+        geminiDuration: result.duration,
+      });
+    } catch {
+      duration = 600;
+    }
+    if (result.uploadedFileName != null) {
+      uploadedFileNames = [result.uploadedFileName];
+    }
+    try {
+      const meta = await fetchYouTubeMetadata(resolved.value);
+      resolvedTitle = meta.title;
+      ytAuthor = meta.author;
+    } catch {
+      const videoId = extractVideoId(resolved.value);
+      resolvedTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
+    }
+  } else if (resolved.type === 'remote') {
+    const result = await handleRemoteUrl(resolved.value, client);
+    fileUri = result.fileUri;
+    mimeType = result.mimeType;
+    try {
+      duration = await detectDuration({
+        geminiDuration: result.duration,
+      });
+    } catch {
+      duration = result.duration ?? 600;
+    }
+    if (result.uploadedFileName != null) {
+      uploadedFileNames = [result.uploadedFileName];
+    }
+    resolvedTitle = result.title;
+  } else {
+    const result = await handleLocalFile(resolved.value, client);
+    fileUri = result.fileUri;
+    mimeType = result.mimeType;
+    duration = await detectDuration({
+      filePath: resolved.value,
+      geminiDuration: result.duration,
+    });
+    if (result.uploadedFileName != null) {
+      uploadedFileNames = [result.uploadedFileName];
+    }
+    resolvedTitle = basename(resolved.value, extname(resolved.value));
+  }
+
+  const finalTitle = videoTitle ?? resolvedTitle;
+  const model = MODELS.flash;
+  const resolvedOutputDir = resolve(outputDir);
+  const slug = slugify(finalTitle);
+  const finalOutputDir = `${resolvedOutputDir}/${slug}`;
+
+  if (existsSync(finalOutputDir)) {
+    await clearDirectory(finalOutputDir);
+  }
+
+  const shutdownHandler = createShutdownHandler({
+    client,
+    uploadedFileNames,
+    outputDir: resolvedOutputDir,
+    videoTitle: finalTitle,
+    source: rawInput,
+    duration,
+    model,
+  });
+  shutdownHandler.register();
+
+  const progress = createProgressDisplay();
+
+  const startTime = Date.now();
+  const pipelineResult = await runPipeline({
+    client,
+    fileUri,
+    mimeType,
+    duration,
+    model,
+    context,
+    lang,
+    channelAuthor: ytAuthor,
+    rateLimiter,
+    onProgress: (status) => {
+      progress.update(status);
+      if (status.currentStep != null && status.totalSteps != null) {
+        shutdownHandler.setProgress(status.currentStep, status.totalSteps);
+      }
+    },
+    onWait: (delayMs) => progress.onWait(delayMs),
+    isShuttingDown: () => shutdownHandler.isShuttingDown(),
+  });
+  const elapsedMs = Date.now() - startTime;
+
+  shutdownHandler.deregister();
+  progress.complete(pipelineResult, elapsedMs);
+
+  await generateOutput({
+    pipelineResult,
+    outputDir: resolvedOutputDir,
+    videoTitle: finalTitle,
+    source: rawInput,
+    duration,
+    model,
+    processingTimeMs: elapsedMs,
+    channelAuthor: ytAuthor,
+  });
+
+  return { title: finalTitle, duration, finalOutputDir };
+}
+
+async function runBatchMode(args: DistillArgs, apiKey: string): Promise<void> {
+  const batchFile = args.batch!;
+  const items = parseBatchFile(batchFile);
+
+  if (items.length === 0) {
+    log.warn('Batch file contains no items to process.');
+    return;
+  }
+
+  log.info(`Processing ${items.length} item${items.length !== 1 ? 's' : ''} from batch file...`);
+
+  const rateLimiter = new RateLimiter();
+  const outputDir = resolve(args.output);
+  const resultItems: BatchResultItem[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    log.info(`Processing ${i + 1}/${items.length}: ${item.input}`);
+
+    try {
+      const { title, duration, finalOutputDir } = await processSingleItem(
+        item.input,
+        item.context ?? args.context ?? '',
+        args.output,
+        args.lang,
+        apiKey,
+        rateLimiter,
+      );
+
+      resultItems.push({
+        input: item.input,
+        outputDir: finalOutputDir,
+        title,
+        duration,
+        success: true,
+      });
+
+      log.success(`  Done: ${title}`);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log.warn(`  Failed: ${errorMsg}`);
+
+      resultItems.push({
+        input: item.input,
+        outputDir: join(outputDir, slugify(item.input)),
+        title: item.input,
+        duration: 0,
+        success: false,
+        error: errorMsg,
+      });
+    }
+  }
+
+  const batchResult = { items: resultItems };
+  const indexContent = generateBatchIndex(batchResult, outputDir);
+  const indexPath = join(outputDir, 'index.md');
+  await writeFile(indexPath, indexContent, 'utf-8');
+
+  const successCount = resultItems.filter((r) => r.success).length;
+  log.success(`Batch complete: ${successCount}/${items.length} succeeded`);
+  log.info(`Index written to ${indexPath}`);
 }
 
 export async function runDistill(args: DistillArgs): Promise<void> {
   // Step 2: Resolve API key
   const apiKey = await resolveApiKey();
+
+  // Batch mode: delegate to batch handler
+  if (args.batch != null) {
+    return runBatchMode(args, apiKey);
+  }
 
   // Step 3: Resolve video source
   let rawInput = args.input ?? (await promptVideoSource());
@@ -161,6 +366,21 @@ export async function runDistill(args: DistillArgs): Promise<void> {
       const videoId = extractVideoId(resolved.value);
       videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
     }
+  } else if (resolved.type === 'remote') {
+    const result = await handleRemoteUrl(resolved.value, client);
+    fileUri = result.fileUri;
+    mimeType = result.mimeType;
+    try {
+      duration = await detectDuration({
+        geminiDuration: result.duration,
+      });
+    } catch {
+      duration = result.duration ?? 600;
+    }
+    if (result.uploadedFileName != null) {
+      uploadedFileNames = [result.uploadedFileName];
+    }
+    videoTitle = result.title;
   } else {
     const result = await handleLocalFile(resolved.value, client);
     fileUri = result.fileUri;

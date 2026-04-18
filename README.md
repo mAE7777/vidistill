@@ -10,7 +10,7 @@ Feed it a YouTube URL, local video, or audio file. It analyzes the content throu
 npm install -g vidistill
 ```
 
-Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/).
+Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/). Non-YouTube URLs also require [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## Usage
 
@@ -20,13 +20,14 @@ vidistill [input] [options]
 
 **Arguments:**
 
-- `input` — YouTube URL, local video, or audio file path (prompted interactively if omitted)
+- `input` — YouTube URL, video URL from any yt-dlp-supported site, local video, or audio file path (prompted interactively if omitted)
 
 **Options:**
 
 - `-c, --context` — context about the video (e.g. "CS lecture", "product demo")
 - `-o, --output` — output directory (default: `./vidistill-output/`)
 - `-l, --lang <code>` — output language (e.g. `zh`, `ja`, `ko`, `es`, `fr`, `de`, `pt`, `ru`, `ar`, `hi`)
+- `-b, --batch <file>` — path to a batch file for processing multiple videos
 
 **Examples:**
 
@@ -48,7 +49,28 @@ vidistill ./demo.mp4 -o ./notes/
 
 # Output in another language
 vidistill ./lecture.mp4 --lang zh
+
+# Non-YouTube URL (Bilibili, Vimeo, Twitter/X, etc.)
+vidistill "https://vimeo.com/123456789"
+
+# Batch processing — one URL/path per line
+vidistill --batch videos.txt
 ```
+
+### Batch Files
+
+Batch files list one video URL or file path per line. Lines starting with `#` are comments. Add optional context after a `|` separator:
+
+```
+# Lectures
+https://youtube.com/watch?v=abc|distributed systems
+https://vimeo.com/123456|networking basics
+
+# Local files
+./recording.mp4|team standup
+```
+
+After processing, an `index.md` is generated in the output directory listing all results.
 
 ## API Key
 

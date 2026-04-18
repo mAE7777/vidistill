@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import { isValidYouTubeUrl, normalizeYouTubeUrl } from './youtube.js';
 
 export interface ResolvedInput {
-  type: 'youtube' | 'local';
+  type: 'youtube' | 'local' | 'remote';
   value: string;
 }
 
@@ -14,11 +14,11 @@ export function resolveInput(input: string): ResolvedInput {
 
   if (looksLikeUrl) {
     if (!isValidYouTubeUrl(input)) {
-      throw new Error('Invalid URL. Only YouTube URLs are supported.');
+      return { type: 'remote', value: input };
     }
     const normalized = normalizeYouTubeUrl(input);
     if (!normalized) {
-      throw new Error('Invalid URL. Only YouTube URLs are supported.');
+      return { type: 'remote', value: input };
     }
     return { type: 'youtube', value: normalized };
   }

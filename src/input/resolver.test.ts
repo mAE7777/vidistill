@@ -37,10 +37,16 @@ describe('resolveInput', () => {
     expect(result.value).toBe('/path/to/video.mp4');
   });
 
-  it('throws for a non-YouTube URL', () => {
-    expect(() => resolveInput('https://vimeo.com/123456')).toThrow(
-      'Invalid URL. Only YouTube URLs are supported.',
-    );
+  it('returns type remote for a non-YouTube URL', () => {
+    const result = resolveInput('https://vimeo.com/123456');
+    expect(result.type).toBe('remote');
+    expect(result.value).toBe('https://vimeo.com/123456');
+  });
+
+  it('returns type remote for a Bilibili URL', () => {
+    const result = resolveInput('https://www.bilibili.com/video/BV1xx411c7XY');
+    expect(result.type).toBe('remote');
+    expect(result.value).toBe('https://www.bilibili.com/video/BV1xx411c7XY');
   });
 
   it('throws for a nonexistent local file', () => {

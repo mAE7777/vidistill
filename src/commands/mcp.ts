@@ -8,6 +8,7 @@ import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
 import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
+import { handleRemoteUrl } from '../input/remote.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
 import { generateOutput, slugify } from '../output/generator.js';
@@ -65,6 +66,18 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
       const videoId = extractVideoId(resolved.value);
       videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
     }
+  } else if (resolved.type === 'remote') {
+    const result = await handleRemoteUrl(resolved.value, client);
+    fileUri = result.fileUri;
+    mimeType = result.mimeType;
+    try {
+      duration = await detectDuration({
+        geminiDuration: result.duration,
+      });
+    } catch {
+      duration = result.duration ?? 600;
+    }
+    videoTitle = result.title;
   } else {
     const result = await handleLocalFile(resolved.value, client);
     fileUri = result.fileUri;
