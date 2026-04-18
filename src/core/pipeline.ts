@@ -442,7 +442,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
           }
         }
       } catch {
-        // LM dedup is best-effort — don't fail the pipeline
+        // LM dedup is best-effort — individual chunk failures don't fail the pipeline
       }
     }
 

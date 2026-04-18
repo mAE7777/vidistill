@@ -9,7 +9,7 @@ interface CategorizedLink extends ExtractedLink {
 }
 
 const URL_REGEX = /https?:\/\/[^\s)<>"\\]+/g;
-const TRAILING_PUNCT = /[.,;:!?)+]+$/;
+const TRAILING_PUNCT = /[.,;:!?)]+$/;
 
 const CATEGORY_PATTERNS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /github\.com/i, category: 'GitHub' },

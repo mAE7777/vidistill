@@ -212,9 +212,12 @@ export function reconcileSpeakers(params: ReconcileSpeakersParams): Reconciliati
   /** Resolve the final canonical index after potential chains of merges. */
   function resolveIndex(idx: number): number {
     let current = idx;
+    const visited: number[] = [];
     while (mergedInto.has(current)) {
+      visited.push(current);
       current = mergedInto.get(current)!;
     }
+    for (const v of visited) mergedInto.set(v, current);
     return current;
   }
 
