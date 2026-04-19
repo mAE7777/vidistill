@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join, dirname, relative } from 'path';
 import type {
   GenerateOutputParams,
   OutputResult,
@@ -15,6 +15,7 @@ import type {
   CodeReconstruction,
   SynthesisResult,
 } from '../types/index.js';
+import { extractKeyframes } from '../core/keyframes.js';
 import { writeGuide } from './guide.js';
 import { writeTranscript } from './transcript.js';
 import { writeCombined } from './combined.js';
@@ -74,7 +75,8 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
 }
 
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
-  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges } = params;
+  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges, inputFilePath } = params;
+  let { keyframes } = params;
 
   const slug = slugify(videoTitle);
   const finalOutputDir = join(outputDir, slug);
@@ -84,6 +86,35 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   const filesGenerated: string[] = [];
   const errors: string[] = [];
+
+  // Step 1b: Keyframe extraction — only when inputFilePath is provided and keyframes not pre-supplied
+  if (inputFilePath != null && keyframes == null) {
+    try {
+      const pass2Results = pipelineResult.segments.map((s) => s.pass2);
+      const kfResult = await extractKeyframes({
+        filePath: inputFilePath,
+        pass2Results,
+        outputDir: finalOutputDir,
+      });
+      if (kfResult.errors.length > 0) {
+        for (const e of kfResult.errors) {
+          errors.push(`keyframes: ${e}`);
+        }
+      }
+      if (kfResult.frames.length > 0) {
+        // extractKeyframes writes frames to finalOutputDir/images/ — map absolute paths to relative
+        const mappedFrames: Array<{ timestamp: string; path: string; description: string }> = [];
+        for (const frame of kfResult.frames) {
+          const relPath = relative(finalOutputDir, frame.path);
+          filesGenerated.push(relPath);
+          mappedFrames.push({ timestamp: frame.timestamp, path: relPath, description: frame.description });
+        }
+        keyframes = mappedFrames;
+      }
+    } catch (err) {
+      errors.push(`keyframes: ${String(err)}`);
+    }
+  }
 
   const filesToGenerate = resolveFilesToGenerate(params);
 
@@ -114,7 +145,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 2b: combined.md — conditional
   if (filesToGenerate.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult, keyframes });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -226,6 +257,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   // Step 4: metadata.json — always generated, written AFTER other files
   try {
+    const imageFiles = filesGenerated.filter((f) => f.startsWith('images/'));
     const content = writeMetadata({
       title: videoTitle,
       source,
@@ -235,6 +267,8 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       filesGenerated: [...filesGenerated],
       pipelineResult,
       speakerMapping,
+      ...(imageFiles.length > 0 ? { imageCount: imageFiles.length } : {}),
+      ...(keyframes != null && keyframes.length > 0 ? { keyframes } : {}),
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {
@@ -272,6 +306,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     filesGenerated: string[];
     passesRun: string[];
     errors: string[];
+    imageCount?: number;
+    keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   }>(join(outputDir, 'metadata.json'));
 
   const videoTitle = metadata?.videoTitle ?? '';
@@ -280,6 +316,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   const model = metadata?.model ?? '';
   const processingTimeMs = metadata?.processingTimeMs ?? 0;
   const filesGenerated = metadata?.filesGenerated ?? [];
+  const storedKeyframes = metadata?.keyframes;
 
   // Reconstruct PipelineResult from raw/ JSON
   const rawDir = join(outputDir, 'raw');
@@ -345,7 +382,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   if (filesToReRender.has('combined.md')) {
     try {
-      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult });
+      const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult, keyframes: storedKeyframes });
       await writeOutputFile('combined.md', content);
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
@@ -403,6 +440,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
 
   // Re-write metadata.json with updated speakerMapping and declinedMerges
   try {
+    const imageCount = metadata?.imageCount;
     const content = writeMetadata({
       title: videoTitle,
       source,
@@ -413,6 +451,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       pipelineResult,
       speakerMapping,
       declinedMerges,
+      ...(imageCount != null && imageCount > 0 ? { imageCount } : {}),
+      ...(storedKeyframes != null && storedKeyframes.length > 0 ? { keyframes: storedKeyframes } : {}),
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {

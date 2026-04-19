@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { writeCombined } from './combined.js';
+import type { KeyframeEntry } from './combined.js';
 import type { PipelineResult, SegmentResult, Pass1Result, Pass2Result, SynthesisResult } from '../types/index.js';
 
 function makePipelineResult(segments: SegmentResult[]): PipelineResult {
@@ -220,6 +221,98 @@ describe('writeCombined', () => {
     expect(result).toContain('Segment 1');
     expect(result).toContain('Segment 2');
     expect(result).toContain('Second segment');
+  });
+
+  describe('keyframes', () => {
+    const KEYFRAMES: KeyframeEntry[] = [
+      { timestamp: '00:05:30', path: 'images/frame-00-05-30.png', description: 'Architecture diagram' },
+      { timestamp: '00:10:00', path: 'images/frame-00-10-00.png', description: 'Code overview' },
+    ];
+
+    const PASS1_MULTI: Pass1Result = {
+      segment_index: 0,
+      time_range: '00:00:00 - 00:15:00',
+      transcript_entries: [
+        { timestamp: '00:04:00', speaker: 'SPEAKER_00', text: 'Before first keyframe', tone: 'neutral' },
+        { timestamp: '00:06:00', speaker: 'SPEAKER_00', text: 'After first keyframe', tone: 'neutral' },
+        { timestamp: '00:11:00', speaker: 'SPEAKER_00', text: 'After second keyframe', tone: 'neutral' },
+      ],
+      speaker_summary: [],
+    };
+
+    it('renders keyframe as markdown image syntax', () => {
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1_MULTI, null)]),
+        keyframes: [KEYFRAMES[0]],
+      });
+      expect(result).toContain('![Architecture diagram](images/frame-00-05-30.png)');
+    });
+
+    it('inserts keyframes at correct chronological positions', () => {
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1_MULTI, null)]),
+        keyframes: KEYFRAMES,
+      });
+      const posBefore = result.indexOf('Before first keyframe');
+      const posFrame1 = result.indexOf('frame-00-05-30.png');
+      const posAfter1 = result.indexOf('After first keyframe');
+      const posFrame2 = result.indexOf('frame-00-10-00.png');
+      const posAfter2 = result.indexOf('After second keyframe');
+
+      // Keyframe at 00:05:30 should appear after the 00:04:00 speech but before 00:06:00 speech
+      expect(posBefore).toBeGreaterThan(-1);
+      expect(posFrame1).toBeGreaterThan(-1);
+      expect(posAfter1).toBeGreaterThan(-1);
+      expect(posFrame2).toBeGreaterThan(-1);
+      expect(posAfter2).toBeGreaterThan(-1);
+
+      expect(posBefore).toBeLessThan(posFrame1);
+      expect(posFrame1).toBeLessThan(posAfter1);
+      expect(posAfter1).toBeLessThan(posFrame2);
+      expect(posFrame2).toBeLessThan(posAfter2);
+    });
+
+    it('keyframe at same timestamp as event appears before the event', () => {
+      const pass1Same: Pass1Result = {
+        segment_index: 0,
+        time_range: '00:00:00 - 00:10:00',
+        transcript_entries: [
+          { timestamp: '00:05:30', speaker: 'SPEAKER_00', text: 'Exact same time as keyframe', tone: 'neutral' },
+        ],
+        speaker_summary: [],
+      };
+      const result = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, pass1Same, null)]),
+        keyframes: [KEYFRAMES[0]],
+      });
+      const posFrame = result.indexOf('frame-00-05-30.png');
+      const posSpeech = result.indexOf('Exact same time as keyframe');
+      expect(posFrame).toBeGreaterThan(-1);
+      expect(posSpeech).toBeGreaterThan(-1);
+      expect(posFrame).toBeLessThan(posSpeech);
+    });
+
+    it('no keyframes produces identical output to omitting the field', () => {
+      const baseResult = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1, PASS2)]),
+      });
+      const noKeyframesResult = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1, PASS2)]),
+        keyframes: [],
+      });
+      expect(noKeyframesResult).toBe(baseResult);
+    });
+
+    it('undefined keyframes produces identical output (backward compat)', () => {
+      const baseResult = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1, PASS2)]),
+      });
+      const explicitUndefinedResult = writeCombined({
+        pipelineResult: makePipelineResult([makeSegment(0, PASS1, PASS2)]),
+        keyframes: undefined,
+      });
+      expect(explicitUndefinedResult).toBe(baseResult);
+    });
   });
 
   describe('synthesisResult dedup', () => {

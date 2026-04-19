@@ -21,8 +21,14 @@ function renderFilesTable(filesGenerated: string[] | undefined): string {
   if (visible.length === 0) {
     return '_No files generated._';
   }
-  const rows = visible.map((f) => `| ${f} |`).join('\n');
-  return `| File |\n|------|\n${rows}`;
+  // Group images/ entries into a single summary row
+  const imageFiles = visible.filter((f) => f.startsWith('images/'));
+  const nonImageFiles = visible.filter((f) => !f.startsWith('images/'));
+  const rows: string[] = nonImageFiles.map((f) => `| ${f} |`);
+  if (imageFiles.length > 0) {
+    rows.push(`| images/ (${imageFiles.length} frames) |`);
+  }
+  return `| File |\n|------|\n${rows.join('\n')}`;
 }
 
 function renderSuggestions(synthesisResult: SynthesisResult | undefined, speakerMapping?: SpeakerMapping): string {

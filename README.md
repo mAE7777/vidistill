@@ -90,11 +90,13 @@ vidistill creates a folder per video with structured files:
 vidistill-output/my-video/
 ├── guide.md           # overview and navigation
 ├── transcript.md      # full timestamped transcript
-├── combined.md        # transcript + visual notes merged
+├── combined.md        # transcript + visual notes + screenshots merged
 ├── notes.md           # notes, implicit questions/decisions, recurring themes
 ├── code/              # extracted and reconstructed source files
 │   ├── *.ext          # individual source files
 │   └── code-timeline.md  # code evolution timeline
+├── images/            # keyframe screenshots at visual change points
+│   └── frame-*.png    # extracted frames (slide transitions, diagrams, etc.)
 ├── people.md          # speakers and participants
 ├── chat.md            # chat messages and links
 ├── action-items.md    # tasks and follow-ups

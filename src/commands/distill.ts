@@ -206,6 +206,7 @@ async function processSingleItem(
     model,
     processingTimeMs: elapsedMs,
     channelAuthor: ytAuthor,
+    ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
   });
 
   return { title: finalTitle, duration, finalOutputDir };
@@ -471,6 +472,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     model,
     processingTimeMs: elapsedMs,
     channelAuthor: ytAuthor,
+    ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
   });
 
   // Step 13: Clean completion output

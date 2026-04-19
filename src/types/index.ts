@@ -314,6 +314,8 @@ export interface GenerateOutputParams {
   channelAuthor?: string;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
+  keyframes?: Array<{ timestamp: string; path: string; description: string }>;
+  inputFilePath?: string;
 }
 
 export interface ReRenderWithSpeakerMappingParams {

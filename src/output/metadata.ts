@@ -16,6 +16,8 @@ export interface MetadataOutput {
   filesGenerated: string[];
   errors: string[];
   generatedAt: string;
+  imageCount?: number;
+  keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
 }
@@ -28,12 +30,14 @@ export interface WriteMetadataParams {
   processingTimeMs: number;
   filesGenerated: string[];
   pipelineResult: PipelineResult;
+  imageCount?: number;
+  keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
 }
 
 export function writeMetadata(params: WriteMetadataParams): string {
-  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, speakerMapping, declinedMerges } = params;
+  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, imageCount, keyframes, speakerMapping, declinedMerges } = params;
   const { passesRun, segments, errors, videoProfile } = pipelineResult;
 
   const output: MetadataOutput = {
@@ -48,6 +52,8 @@ export function writeMetadata(params: WriteMetadataParams): string {
     filesGenerated,
     errors,
     generatedAt: new Date().toISOString(),
+    ...(imageCount != null && imageCount > 0 ? { imageCount } : {}),
+    ...(keyframes != null && keyframes.length > 0 ? { keyframes } : {}),
     ...(speakerMapping != null && Object.keys(speakerMapping).length > 0 ? { speakerMapping } : {}),
     ...(declinedMerges != null && declinedMerges.length > 0 ? { declinedMerges } : {}),
   };

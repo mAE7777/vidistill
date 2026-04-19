@@ -232,4 +232,40 @@ describe('writeGuide', () => {
     });
     expect(result).not.toContain('## Prerequisites');
   });
+
+  it('shows images/ summary row when filesGenerated includes image entries', () => {
+    const imageFiles = Array.from({ length: 15 }, (_, i) => `images/frame-00-00-${String(i).padStart(2, '0')}.png`);
+    const result = writeGuide({
+      title: 'Test',
+      source: 's',
+      duration: 60,
+      pipelineResult: makePipelineResult(),
+      filesGenerated: ['transcript.md', ...imageFiles],
+    });
+    expect(result).toContain('| images/ (15 frames) |');
+  });
+
+  it('does not show images/ row when no image entries present', () => {
+    const result = writeGuide({
+      title: 'Test',
+      source: 's',
+      duration: 60,
+      pipelineResult: makePipelineResult(),
+      filesGenerated: ['transcript.md', 'combined.md'],
+    });
+    expect(result).not.toContain('images/');
+  });
+
+  it('does not list individual image files in the files table', () => {
+    const imageFiles = ['images/frame-00-01-00.png', 'images/frame-00-02-00.png'];
+    const result = writeGuide({
+      title: 'Test',
+      source: 's',
+      duration: 60,
+      pipelineResult: makePipelineResult(),
+      filesGenerated: ['transcript.md', ...imageFiles],
+    });
+    expect(result).not.toContain('frame-00-01-00.png');
+    expect(result).not.toContain('frame-00-02-00.png');
+  });
 });

@@ -294,6 +294,50 @@ describe('writeMetadata', () => {
     });
     expect(result).toContain('\n  ');
   });
+
+  it('contains imageCount when provided and > 0', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult(),
+      imageCount: 15,
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['imageCount']).toBe(15);
+  });
+
+  it('omits imageCount when 0', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult(),
+      imageCount: 0,
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['imageCount']).toBeUndefined();
+  });
+
+  it('omits imageCount when undefined', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult(),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['imageCount']).toBeUndefined();
+  });
 });
 
 // ── writeRawOutput ────────────────────────────────────────────────────────────

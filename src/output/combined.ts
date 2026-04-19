@@ -3,10 +3,17 @@ import { isNearDuplicate, trimBoundaryOverlap } from '../core/transcript-consens
 import { tokenOverlap } from '../core/consensus.js';
 import type { PipelineResult, TranscriptEntry, CodeBlock, VisualNote, SpeakerMapping, SynthesisResult } from '../types/index.js';
 
+export interface KeyframeEntry {
+  timestamp: string;
+  path: string;
+  description: string;
+}
+
 export interface WriteCombinedParams {
   pipelineResult: PipelineResult;
   speakerMapping?: SpeakerMapping;
   synthesisResult?: SynthesisResult;
+  keyframes?: KeyframeEntry[];
 }
 
 type EventKind = 'speech' | 'code' | 'visual';
@@ -91,9 +98,15 @@ function renderEvent(event: TimelineEvent, speakerMapping?: SpeakerMapping): str
 }
 
 export function writeCombined(params: WriteCombinedParams): string {
-  const { pipelineResult, speakerMapping, synthesisResult } = params;
+  const { pipelineResult, speakerMapping, synthesisResult, keyframes } = params;
   const { segments } = pipelineResult;
   const synthTexts = synthesisResult != null ? collectSynthesisTexts(synthesisResult) : null;
+
+  // Sort keyframes chronologically; track index for sequential emission
+  const sortedKeyframes: KeyframeEntry[] = keyframes != null
+    ? [...keyframes].sort((a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp))
+    : [];
+  let kfIndex = 0;
 
   const sections: string[] = ['# Combined View', '', '_Chronological interleaving of speech, code, and visuals._', ''];
 
@@ -163,6 +176,18 @@ export function writeCombined(params: WriteCombinedParams): string {
     });
 
     for (const event of events) {
+      // Emit any keyframes whose timestamp is <= this event's timestamp (before the event)
+      while (kfIndex < sortedKeyframes.length) {
+        const kf = sortedKeyframes[kfIndex];
+        if (parseTimestamp(kf.timestamp) <= parseTimestamp(event.timestamp)) {
+          sections.push(`![${kf.description}](${kf.path})`);
+          sections.push('');
+          kfIndex++;
+        } else {
+          break;
+        }
+      }
+
       if (
         event.kind === 'speech' &&
         synthTexts != null &&
@@ -173,6 +198,14 @@ export function writeCombined(params: WriteCombinedParams): string {
       sections.push(renderEvent(event, speakerMapping));
       sections.push('');
     }
+  }
+
+  // Emit any remaining keyframes that come after all events
+  while (kfIndex < sortedKeyframes.length) {
+    const kf = sortedKeyframes[kfIndex];
+    sections.push(`![${kf.description}](${kf.path})`);
+    sections.push('');
+    kfIndex++;
   }
 
   // Trim trailing blank lines
