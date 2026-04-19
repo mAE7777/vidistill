@@ -100,6 +100,7 @@ export function trimBoundaryOverlap<T extends { timestamp: string; text: string 
  * Works with any object that has timestamp + text (Pass1aEntry, TranscriptEntry, etc).
  */
 export function isNearDuplicate(a: { timestamp: string; text: string }, b: { timestamp: string; text: string }): boolean {
+  if (!a.text || !b.text) return false;
   const delta = Math.abs(parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
   if (delta > DEDUP_WINDOW_S) return false;
   if (a.text === b.text) return true;
@@ -139,7 +140,7 @@ function deduplicateEntries(entries: Pass1aEntry[]): Pass1aEntry[] {
     for (let j = result.length - 1; j >= Math.max(0, result.length - 3); j--) {
       if (isNearDuplicate(curr, result[j])) {
         // Keep whichever is longer
-        if (curr.text.length > result[j].text.length) {
+        if ((curr.text ?? '').length > (result[j].text ?? '').length) {
           result[j] = curr;
         }
         isDup = true;

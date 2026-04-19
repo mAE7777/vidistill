@@ -43,6 +43,7 @@ function collectPass2Filenames(pass2Results: (Pass2Result | null)[]): {
   for (const p2 of pass2Results) {
     if (p2 == null) continue;
     for (const block of p2.code_blocks) {
+      if (!block.filename) continue;
       const norm = normalizeFilename(block.filename);
       normalized.add(norm);
       basenames.add(basename(block.filename));
