@@ -147,6 +147,11 @@ claude mcp add vidistill -- npx vidistill mcp
 - `analyze_video` — run the full pipeline on a URL or file, returns output dir + summary
 - `get_transcript` — read transcript from an existing output dir, with optional time range filtering
 - `get_code` — read extracted code files from an existing output dir
+- `get_notes` — read synthesized notes (overview, decisions, concepts, topics, suggestions)
+- `get_people` — read speaker/participant details (name, role, organization, contributions)
+- `get_action_items` — read assigned tasks from implicit signals analysis
+- `get_links` — read all URLs mentioned in the video
+- `get_chat` — read chat messages from live streams or meetings
 
 Requires `GEMINI_API_KEY` set as environment variable or in `~/.vidistill/config.json`.
 
