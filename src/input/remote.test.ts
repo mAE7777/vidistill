@@ -7,33 +7,37 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 // ---------------------------------------------------------------------------
 
 const {
-  mockCheckInstallationAsync,
+  mockExecFileSync,
   mockGetInfoAsync,
   mockDownloadAsync,
   mockTryUnlink,
   mockUploadFile,
   MockYtDlp,
 } = vi.hoisted(() => {
-  const mockCheckInstallationAsync = vi.fn();
+  const mockExecFileSync = vi.fn();
   const mockGetInfoAsync = vi.fn();
   const mockDownloadAsync = vi.fn();
   const mockTryUnlink = vi.fn();
   const mockUploadFile = vi.fn();
 
   const MockYtDlp = vi.fn().mockImplementation(() => ({
-    checkInstallationAsync: mockCheckInstallationAsync,
     getInfoAsync: mockGetInfoAsync,
     downloadAsync: mockDownloadAsync,
   }));
 
   return {
-    mockCheckInstallationAsync,
+    mockExecFileSync,
     mockGetInfoAsync,
     mockDownloadAsync,
     mockTryUnlink,
     mockUploadFile,
     MockYtDlp,
   };
+});
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return { ...actual, execFileSync: mockExecFileSync };
 });
 
 vi.mock('ytdlp-nodejs', () => ({
@@ -54,10 +58,11 @@ afterEach(() => {
 beforeEach(() => {
   // Re-apply mockImplementation after resetAllMocks clears it
   MockYtDlp.mockImplementation(() => ({
-    checkInstallationAsync: mockCheckInstallationAsync,
     getInfoAsync: mockGetInfoAsync,
     downloadAsync: mockDownloadAsync,
   }));
+  // Default: yt-dlp is installed
+  mockExecFileSync.mockReturnValue('/opt/homebrew/bin/yt-dlp\n');
 });
 
 function makeClient(): GeminiClient {
@@ -66,7 +71,7 @@ function makeClient(): GeminiClient {
 
 describe('handleRemoteUrl', () => {
   it('throws with install instructions when yt-dlp is not installed', async () => {
-    mockCheckInstallationAsync.mockResolvedValue(false);
+    mockExecFileSync.mockImplementation(() => { throw new Error('not found'); });
 
     await expect(handleRemoteUrl('https://vimeo.com/123456', makeClient())).rejects.toThrow(
       'yt-dlp is required for non-YouTube URLs. Install: brew install yt-dlp',
@@ -74,7 +79,6 @@ describe('handleRemoteUrl', () => {
   });
 
   it('downloads, uploads, deletes temp file, and returns result', async () => {
-    mockCheckInstallationAsync.mockResolvedValue(true);
     mockGetInfoAsync.mockResolvedValue({ title: 'Test Video', duration: 120 });
     mockDownloadAsync.mockResolvedValue('');
     mockUploadFile.mockResolvedValue({
@@ -97,7 +101,6 @@ describe('handleRemoteUrl', () => {
   });
 
   it('deletes temp file even when upload fails', async () => {
-    mockCheckInstallationAsync.mockResolvedValue(true);
     mockGetInfoAsync.mockResolvedValue({ title: 'Test Video', duration: 60 });
     mockDownloadAsync.mockResolvedValue('');
     mockUploadFile.mockRejectedValue(new Error('upload failed'));
@@ -111,7 +114,6 @@ describe('handleRemoteUrl', () => {
   });
 
   it('uses URL as title fallback when metadata fetch fails', async () => {
-    mockCheckInstallationAsync.mockResolvedValue(true);
     mockGetInfoAsync.mockRejectedValue(new Error('metadata unavailable'));
     mockDownloadAsync.mockResolvedValue('');
     mockUploadFile.mockResolvedValue({
@@ -127,7 +129,6 @@ describe('handleRemoteUrl', () => {
   });
 
   it('propagates download failure as fatal error', async () => {
-    mockCheckInstallationAsync.mockResolvedValue(true);
     mockGetInfoAsync.mockResolvedValue({ title: 'Test Video', duration: 60 });
     mockDownloadAsync.mockRejectedValue(new Error('yt-dlp exited with code 1'));
 

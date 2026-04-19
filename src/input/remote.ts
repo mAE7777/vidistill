@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { YtDlp } from 'ytdlp-nodejs';
@@ -9,6 +10,14 @@ const DOWNLOAD_FORMAT =
 
 function tempPath(): string {
   return join(tmpdir(), `vidistill-remote-${Date.now()}-${Math.random().toString(36).slice(2)}.mp4`);
+}
+
+function findYtDlp(): string | null {
+  try {
+    return execFileSync('which', ['yt-dlp'], { encoding: 'utf-8' }).trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export interface RemoteUrlResult {
@@ -23,14 +32,14 @@ export async function handleRemoteUrl(
   url: string,
   client: GeminiClient,
 ): Promise<RemoteUrlResult> {
-  const ytdlp = new YtDlp();
-
-  const installed = await ytdlp.checkInstallationAsync();
-  if (!installed) {
+  const binaryPath = findYtDlp();
+  if (!binaryPath) {
     throw new Error(
       'yt-dlp is required for non-YouTube URLs. Install: brew install yt-dlp',
     );
   }
+
+  const ytdlp = new YtDlp({ binaryPath });
 
   let title: string = url;
   let duration: number | undefined;
