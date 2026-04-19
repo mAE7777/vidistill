@@ -26,7 +26,7 @@ const DEFAULT_MAX_FRAMES = 50;
 const DEDUP_WINDOW_SECONDS = 3;
 const SLIDE_TYPES = new Set(['slide', 'diagram', 'whiteboard']);
 
-function isYouTubeUrl(input: string): boolean {
+function isRemoteUrl(input: string): boolean {
   return /^https?:\/\//i.test(input);
 }
 
@@ -129,7 +129,7 @@ export async function extractKeyframes(config: KeyframeConfig): Promise<Keyframe
   const { filePath, pass2Results, maxFrames = DEFAULT_MAX_FRAMES, outputDir } = config;
 
   // Skip extraction for YouTube direct URLs or missing local files
-  if (!filePath || isYouTubeUrl(filePath) || !existsSync(filePath)) {
+  if (!filePath || isRemoteUrl(filePath) || !existsSync(filePath)) {
     return { frames: [], errors: [] };
   }
 
@@ -149,6 +149,7 @@ export async function extractKeyframes(config: KeyframeConfig): Promise<Keyframe
 
     try {
       execFileSync('ffmpeg', [
+        '-y',
         '-ss', timestamp,
         '-i', filePath,
         '-frames:v', '1',

@@ -119,6 +119,7 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
     model,
     processingTimeMs: elapsedMs,
     channelAuthor: ytAuthor,
+    ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
   });
 
   // Read synthesis.json for summary

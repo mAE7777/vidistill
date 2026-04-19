@@ -376,6 +376,7 @@ describe('ffmpeg invocation', () => {
     });
 
     expect(mockExecFileSync).toHaveBeenCalledWith('ffmpeg', [
+      '-y',
       '-ss', '00:05:30',
       '-i', '/video.mp4',
       '-frames:v', '1',
