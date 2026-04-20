@@ -275,7 +275,7 @@ export async function getPeople(outputDir: string): Promise<string> {
 
   const peoplePath = join(absDir, 'raw', 'pass3b-people.json');
   const people = await readJsonFile<PeopleExtraction>(peoplePath);
-  if (people == null || people.participants.length === 0) {
+  if (people == null || !Array.isArray(people.participants) || people.participants.length === 0) {
     throw new Error('No people data found');
   }
 
@@ -397,8 +397,10 @@ export async function getLinks(outputDir: string): Promise<string> {
     if (content.trim().length > 0) {
       return content;
     }
-  } catch {
-    // links.md not present — fall through to raw data
+  } catch (err: unknown) {
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
+    }
   }
 
   const rawDir = join(absDir, 'raw');
