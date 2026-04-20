@@ -255,4 +255,92 @@ describe('runDistill', () => {
       expect(promptConfirmation).not.toHaveBeenCalled();
     });
   });
+
+  describe('cost estimate callback', () => {
+    it('passes onPass0Complete to runPipeline and shows cost estimate', async () => {
+      const { note, confirm } = await import('@clack/prompts');
+      (confirm as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+      mockRunPipeline.mockImplementation(async (config: Record<string, unknown>) => {
+        if (typeof config.onPass0Complete === 'function') {
+          const mockProfile = { type: 'coding', speakers: { count: 1, identified: [] }, visualContent: {}, audioContent: {}, complexity: 'moderate', recommendations: {} };
+          const mockStrategy = { passes: ['transcript', 'visual', 'code', 'synthesis'], resolution: 'medium', segmentMinutes: 10 };
+          await config.onPass0Complete(mockProfile, mockStrategy, 3);
+        }
+        return basePipelineResult({ apiCallCount: 27 });
+      });
+
+      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
+
+      expect(note).toHaveBeenCalledWith(
+        expect.stringContaining('API calls'),
+        'Cost estimate',
+      );
+      expect(confirm).toHaveBeenCalledWith({ message: 'Proceed?' });
+    });
+
+    it('aborts pipeline when user declines cost estimate', async () => {
+      const { confirm } = await import('@clack/prompts');
+      (confirm as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+      mockRunPipeline.mockImplementation(async (config: Record<string, unknown>) => {
+        if (typeof config.onPass0Complete === 'function') {
+          const mockProfile = { type: 'coding', speakers: { count: 1, identified: [] }, visualContent: {}, audioContent: {}, complexity: 'moderate', recommendations: {} };
+          const mockStrategy = { passes: ['transcript', 'visual'], resolution: 'medium', segmentMinutes: 10 };
+          const proceed = await config.onPass0Complete(mockProfile, mockStrategy, 1);
+          if (!proceed) {
+            return basePipelineResult({ segments: [], passesRun: [] });
+          }
+        }
+        return basePipelineResult();
+      });
+
+      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
+
+      expect(confirm).toHaveBeenCalled();
+    });
+
+    it('aborts gracefully when user presses Ctrl+C at cost estimate', async () => {
+      const { confirm } = await import('@clack/prompts');
+      (confirm as ReturnType<typeof vi.fn>).mockResolvedValue(Symbol('clack:cancel'));
+
+      mockRunPipeline.mockImplementation(async (config: Record<string, unknown>) => {
+        if (typeof config.onPass0Complete === 'function') {
+          const mockProfile = { type: 'coding', speakers: { count: 1, identified: [] }, visualContent: {}, audioContent: {}, complexity: 'moderate', recommendations: {} };
+          const mockStrategy = { passes: ['transcript', 'visual'], resolution: 'medium', segmentMinutes: 10 };
+          const proceed = await config.onPass0Complete(mockProfile, mockStrategy, 1);
+          if (!proceed) {
+            return basePipelineResult({ segments: [], passesRun: [] });
+          }
+        }
+        return basePipelineResult();
+      });
+
+      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
+
+      expect(confirm).toHaveBeenCalled();
+    });
+  });
+
+  describe('post-pipeline summary', () => {
+    it('displays summary with API calls, duration, and token usage', async () => {
+      const { note } = await import('@clack/prompts');
+
+      mockRunPipeline.mockResolvedValue(basePipelineResult({
+        apiCallCount: 27,
+        consensusAgreementRate: 0.85,
+        tokenUsage: { promptTokens: 50000, candidatesTokens: 10000, totalTokens: 60000 },
+      }));
+
+      await runDistill({ input: '/tmp/video.mp4', context: 'test', output: './out' });
+
+      const noteCalls = (note as ReturnType<typeof vi.fn>).mock.calls;
+      const summaryCall = noteCalls.find((c: unknown[]) => c[1] === 'Summary');
+      expect(summaryCall).toBeDefined();
+      const summaryText = summaryCall![0] as string;
+      expect(summaryText).toContain('API calls: 27');
+      expect(summaryText).toContain('Consensus: 85%');
+      expect(summaryText).toContain('Tokens:');
+    });
+  });
 });

@@ -16,6 +16,7 @@ import { MODELS } from '../gemini/models.js';
 import { runCodeConsensus, runLinkConsensus } from './consensus.js';
 import { validateCodeReconstruction } from './validator.js';
 import { reconcileSpeakers } from './speaker-reconciliation.js';
+import { TRANSCRIPT_CONSENSUS_RUNS, LINK_CONSENSUS_RUNS } from './estimator.js';
 import { SYSTEM_INSTRUCTION_DEDUP } from '../constants/prompts.js';
 import { SCHEMA_DEDUP_REVIEW } from '../gemini/schemas.js';
 import type {
@@ -162,8 +163,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const n = segments.length;
 
   // Calculate total steps for progress tracking
-  const transcriptConsensusRuns = 3;
-  const linkConsensusRuns = 3;
+  const transcriptConsensusRuns = TRANSCRIPT_CONSENSUS_RUNS;
+  const linkConsensusRuns = LINK_CONSENSUS_RUNS;
   const callsPerSegment =
     (transcriptConsensusRuns * 2) + 1 +
     (strategy.passes.includes('chat') ? linkConsensusRuns : 0) +

@@ -14,6 +14,7 @@ import type {
   PeopleExtraction,
   CodeReconstruction,
   SynthesisResult,
+  TokenUsage,
 } from '../types/index.js';
 import { extractKeyframes } from '../core/keyframes.js';
 import { writeGuide } from './guide.js';
@@ -310,6 +311,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     keyframes?: Array<{ timestamp: string; path: string; description: string }>;
     apiCallCount?: number;
     consensusAgreementRate?: number;
+    tokenUsage?: TokenUsage;
   }>(join(outputDir, 'metadata.json'));
 
   const videoTitle = metadata?.videoTitle ?? '';
@@ -349,6 +351,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     codeReconstruction: codeReconstruction ?? undefined,
     apiCallCount: metadata?.apiCallCount ?? 0,
     ...(metadata?.consensusAgreementRate != null ? { consensusAgreementRate: metadata.consensusAgreementRate } : {}),
+    ...(metadata?.tokenUsage != null ? { tokenUsage: metadata.tokenUsage } : {}),
   };
 
   // Helper: write a file only if content changed, and record it
