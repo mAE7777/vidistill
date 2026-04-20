@@ -2,6 +2,7 @@ import type {
   PipelineResult,
   VideoType,
   SpeakerMapping,
+  TokenUsage,
 } from '../types/index.js';
 
 export interface MetadataOutput {
@@ -20,6 +21,9 @@ export interface MetadataOutput {
   keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
+  tokenUsage?: TokenUsage;
+  apiCallCount?: number;
+  consensusAgreementRate?: number;
 }
 
 export interface WriteMetadataParams {
@@ -38,7 +42,7 @@ export interface WriteMetadataParams {
 
 export function writeMetadata(params: WriteMetadataParams): string {
   const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, imageCount, keyframes, speakerMapping, declinedMerges } = params;
-  const { passesRun, segments, errors, videoProfile } = pipelineResult;
+  const { passesRun, segments, errors, videoProfile, tokenUsage, apiCallCount, consensusAgreementRate } = pipelineResult;
 
   const output: MetadataOutput = {
     videoTitle: title,
@@ -56,6 +60,9 @@ export function writeMetadata(params: WriteMetadataParams): string {
     ...(keyframes != null && keyframes.length > 0 ? { keyframes } : {}),
     ...(speakerMapping != null && Object.keys(speakerMapping).length > 0 ? { speakerMapping } : {}),
     ...(declinedMerges != null && declinedMerges.length > 0 ? { declinedMerges } : {}),
+    ...(tokenUsage != null ? { tokenUsage } : {}),
+    ...(apiCallCount != null ? { apiCallCount } : {}),
+    ...(consensusAgreementRate != null ? { consensusAgreementRate } : {}),
   };
 
   return JSON.stringify(output, null, 2);

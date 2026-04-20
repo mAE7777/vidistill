@@ -261,6 +261,17 @@ export interface SegmentResult {
   pass3d?: ImplicitSignals | null;
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  candidatesTokens: number;
+  totalTokens: number;
+}
+
+export interface CostEstimate {
+  totalCalls: number;
+  estimatedMinutes: [number, number];
+}
+
 export interface PipelineResult {
   segments: SegmentResult[];
   passesRun: string[];
@@ -273,6 +284,9 @@ export interface PipelineResult {
   uncertainCodeFiles?: string[];
   /** Set when pipeline was interrupted mid-run. Lists pass names that did not complete. */
   interrupted?: string[];
+  tokenUsage?: TokenUsage;
+  apiCallCount: number;
+  consensusAgreementRate?: number;
 }
 
 export interface PassResult<T> {
@@ -301,6 +315,7 @@ export interface RunPipelineConfig {
   onProgress?: (status: ProgressStatus) => void;
   onWait?: (delayMs: number) => void;
   isShuttingDown?: () => boolean;
+  onPass0Complete?: (profile: VideoProfile, strategy: PassStrategy, segmentCount: number) => Promise<boolean>;
 }
 
 export interface GenerateOutputParams {

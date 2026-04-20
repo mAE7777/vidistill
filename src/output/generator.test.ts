@@ -72,6 +72,7 @@ function makeMinimalPipelineResult(): PipelineResult {
     segments: [{ index: 0, pass1: null, pass2: null }],
     passesRun: ['pass1'],
     errors: [],
+    apiCallCount: 0,
   };
 }
 
@@ -118,6 +119,7 @@ function makeFullPipelineResult(): PipelineResult {
       prerequisites: [],
     },
     peopleExtraction: { participants: [], relationships: [] },
+    apiCallCount: 0,
   };
 }
 
@@ -314,6 +316,7 @@ describe('generateOutput', () => {
       ],
       passesRun: ['pass1', 'pass2', 'pass3c', 'pass3d'],
       errors: [],
+      apiCallCount: 0,
     };
 
     const params = makeParams({ pipelineResult });

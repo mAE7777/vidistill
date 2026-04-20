@@ -7,7 +7,7 @@ function makeSegment(pass1: Pass1Result | null, index = 0): SegmentResult {
 }
 
 function makePipelineResult(segments: SegmentResult[]): PipelineResult {
-  return { segments, passesRun: [], errors: [] };
+  return { segments, passesRun: [], errors: [], apiCallCount: 0 };
 }
 
 const PASS1_BASIC: Pass1Result = {

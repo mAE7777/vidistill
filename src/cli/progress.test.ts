@@ -160,7 +160,7 @@ describe('createProgressDisplay', () => {
 
   it('complete() stops spinner when no progress bar was created', () => {
     const display = createProgressDisplay();
-    display.complete({ segments: [{ index: 0, pass1: null, pass2: null }], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
+    display.complete({ segments: [{ index: 0, pass1: null, pass2: null }], passesRun: ['pass1', 'pass2'], errors: [], apiCallCount: 0 }, 5000);
     expect(mockSpinner.stop).toHaveBeenCalledWith('');
   });
 
@@ -169,7 +169,7 @@ describe('createProgressDisplay', () => {
     // Trigger progress bar creation
     display.update({ phase: 'pass1', segment: 0, totalSegments: 3, status: 'running', totalSteps: 10 });
     vi.clearAllMocks();
-    display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: [] }, 5000);
+    display.complete({ segments: [], passesRun: ['pass1', 'pass2'], errors: [], apiCallCount: 0 }, 5000);
     expect(mockProgressBar.stop).toHaveBeenCalledWith('');
     expect(mockSpinner.stop).not.toHaveBeenCalled();
   });

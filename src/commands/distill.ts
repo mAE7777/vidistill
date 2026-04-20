@@ -1,4 +1,4 @@
-import { log, cancel } from '@clack/prompts';
+import { log, cancel, note, confirm } from '@clack/prompts';
 import pc from 'picocolors';
 import { basename, extname, resolve, join } from 'path';
 import { existsSync, openSync, readSync, closeSync } from 'fs';
@@ -20,6 +20,8 @@ import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
 import { parseBatchFile, generateBatchIndex } from '../core/batch.js';
 import type { BatchResultItem } from '../core/batch.js';
+import { estimateApiCalls } from '../core/estimator.js';
+import type { VideoProfile, PassStrategy } from '../types/index.js';
 
 /**
  * Quick audio detection from magic bytes for pre-pipeline display purposes.
@@ -448,6 +450,15 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     },
     onWait: (delayMs) => progress.onWait(delayMs),
     isShuttingDown: () => shutdownHandler.isShuttingDown(),
+    onPass0Complete: async (profile: VideoProfile, strategy: PassStrategy, segmentCount: number) => {
+      const estimate = estimateApiCalls(strategy, segmentCount);
+      const [minMin, maxMin] = estimate.estimatedMinutes;
+      const minRounded = Math.round(minMin);
+      const maxRounded = Math.round(maxMin);
+      note(`~${estimate.totalCalls} API calls • est. ${minRounded}-${maxRounded} min`, 'Cost estimate');
+      const shouldProceed = await confirm({ message: 'Proceed?' });
+      return shouldProceed === true;
+    },
   });
   const elapsedMs = Date.now() - startTime;
 
@@ -475,11 +486,25 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
   });
 
-  // Step 13: Clean completion output
+  // Step 13: Post-pipeline summary
   const elapsedSecs = Math.round(elapsedMs / 1000);
   const elapsedMins = Math.floor(elapsedSecs / 60);
   const remainSecs = elapsedSecs % 60;
   const elapsed = elapsedMins > 0 ? `${elapsedMins}m ${remainSecs}s` : `${remainSecs}s`;
+
+  const summaryLines: string[] = [
+    `API calls: ${pipelineResult.apiCallCount} • Duration: ${elapsed}`,
+    `Errors: ${pipelineResult.errors.length}`,
+  ];
+  if (pipelineResult.consensusAgreementRate != null) {
+    summaryLines.push(`Consensus: ${Math.round(pipelineResult.consensusAgreementRate * 100)}%`);
+  }
+  if (pipelineResult.tokenUsage != null) {
+    const prompt = pipelineResult.tokenUsage.promptTokens.toLocaleString();
+    const output = pipelineResult.tokenUsage.candidatesTokens.toLocaleString();
+    summaryLines.push(`Tokens: ${prompt} prompt / ${output} output`);
+  }
+  note(summaryLines.join('\n'), 'Summary');
 
   log.success(`Done in ${elapsed}`);
   log.info(`Output: ${finalOutputDir}/`);

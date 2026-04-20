@@ -44,6 +44,7 @@ function makePipelineResult(overrides: Partial<PipelineResult> = {}): PipelineRe
     segments: [],
     passesRun: [],
     errors: [],
+    apiCallCount: 0,
     ...overrides,
   };
 }

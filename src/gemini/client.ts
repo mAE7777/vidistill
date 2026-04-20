@@ -4,6 +4,7 @@ import {
   type Content,
   type GenerateContentConfig,
 } from '@google/genai';
+import type { TokenUsage } from '../types/index.js';
 
 export interface UploadedFile {
   uri: string;
@@ -14,6 +15,8 @@ export interface UploadedFile {
 
 export class GeminiClient {
   private ai: GoogleGenAI;
+  private _tokenUsage: TokenUsage = { promptTokens: 0, candidatesTokens: 0, totalTokens: 0 };
+  private _apiCallCount: number = 0;
 
   constructor(apiKey: string) {
     this.ai = new GoogleGenAI({ apiKey });
@@ -91,12 +94,33 @@ export class GeminiClient {
     contents: Content[];
     config: GenerateContentConfig;
   }): Promise<unknown> {
+    this._apiCallCount++;
     const response = await this.ai.models.generateContent(params);
+
+    if (response.usageMetadata != null) {
+      const prompt = response.usageMetadata.promptTokenCount ?? 0;
+      const candidates = response.usageMetadata.candidatesTokenCount ?? 0;
+      this._tokenUsage.promptTokens += prompt;
+      this._tokenUsage.candidatesTokens += candidates;
+      this._tokenUsage.totalTokens = this._tokenUsage.promptTokens + this._tokenUsage.candidatesTokens;
+    }
 
     if (!response.text) {
       throw new Error('Gemini returned an empty response');
     }
 
     return JSON.parse(response.text) as unknown;
+  }
+
+  getTokenUsage(): TokenUsage {
+    return { ...this._tokenUsage };
+  }
+
+  resetTokenUsage(): void {
+    this._tokenUsage = { promptTokens: 0, candidatesTokens: 0, totalTokens: 0 };
+  }
+
+  getApiCallCount(): number {
+    return this._apiCallCount;
   }
 }

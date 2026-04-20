@@ -18,6 +18,7 @@ function makePipelineResult(overrides: Partial<PipelineResult> = {}): PipelineRe
     segments: [],
     passesRun: [],
     errors: [],
+    apiCallCount: 0,
     ...overrides,
   };
 }
@@ -337,6 +338,91 @@ describe('writeMetadata', () => {
     });
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed['imageCount']).toBeUndefined();
+  });
+
+  it('includes tokenUsage when present on pipelineResult', () => {
+    const tokenUsage = { promptTokens: 100, candidatesTokens: 50, totalTokens: 150 };
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult({ tokenUsage }),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['tokenUsage']).toEqual(tokenUsage);
+  });
+
+  it('omits tokenUsage when not present on pipelineResult', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult(),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['tokenUsage']).toBeUndefined();
+  });
+
+  it('includes apiCallCount when present on pipelineResult', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult({ apiCallCount: 27 }),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['apiCallCount']).toBe(27);
+  });
+
+  it('includes apiCallCount of 0 when pipelineResult has apiCallCount of 0', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult({ apiCallCount: 0 }),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['apiCallCount']).toBe(0);
+  });
+
+  it('includes consensusAgreementRate when present on pipelineResult', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult({ consensusAgreementRate: 0.85 }),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['consensusAgreementRate']).toBe(0.85);
+  });
+
+  it('omits consensusAgreementRate when not present on pipelineResult', () => {
+    const result = writeMetadata({
+      title: 't',
+      source: 's',
+      duration: 0,
+      model: 'm',
+      processingTimeMs: 0,
+      filesGenerated: [],
+      pipelineResult: makePipelineResult(),
+    });
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed['consensusAgreementRate']).toBeUndefined();
   });
 });
 

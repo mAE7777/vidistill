@@ -176,6 +176,8 @@ Audio files skip visual passes and go straight to transcript, people, implicit s
 
 Long videos are segmented automatically. Passes that fail are skipped gracefully.
 
+In interactive mode, a cost estimate is shown after scene analysis (API call count and estimated duration). After the pipeline completes, a summary displays actual API calls, duration, consensus rate, and token usage. These metrics are also saved to `metadata.json`.
+
 ## License
 
 MIT

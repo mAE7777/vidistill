@@ -138,6 +138,26 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const segments = plan.segments;
   const resolution = plan.resolution;
 
+  if (config.onPass0Complete != null) {
+    const proceed = await config.onPass0Complete(videoProfile, strategy, segments.length);
+    if (!proceed) {
+      return {
+        segments: [],
+        passesRun: [],
+        errors,
+        videoProfile,
+        strategy,
+        synthesisResult: undefined,
+        peopleExtraction: null,
+        codeReconstruction: null,
+        uncertainCodeFiles: undefined,
+        interrupted: undefined,
+        tokenUsage: client.getTokenUsage(),
+        apiCallCount: client.getApiCallCount(),
+      };
+    }
+  }
+
   const results: SegmentResult[] = [];
   const n = segments.length;
 
@@ -164,6 +184,9 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   let wasInterrupted = false;
   const interruptedPasses: string[] = [];
 
+  let consensusAttempts = 0;
+  let consensusSuccesses = 0;
+
   for (let i = 0; i < n; i++) {
     if (isShuttingDown?.()) {
       wasInterrupted = true;
@@ -187,10 +210,13 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     });
 
     const pass1aResult = transcriptConsensusResult.result;
+    consensusAttempts++;
     if (pass1aResult === null) {
       const errMsg = `segment ${i} pass1a: all transcription consensus runs failed`;
       log.warn(errMsg);
       errors.push(errMsg);
+    } else {
+      consensusSuccesses++;
     }
 
     // Phase 1b: Diarization consensus (only if 1a succeeded)
@@ -209,6 +235,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         },
       });
 
+      consensusAttempts++;
       if (pass1bResult === null) {
         const errMsg = `segment ${i} pass1b: all diarization consensus runs failed`;
         log.warn(errMsg);
@@ -216,6 +243,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         // Graceful degradation: transcript without speakers
         pass1 = mergeTranscriptResults(pass1aResult, { speaker_assignments: [], speaker_summary: [] });
       } else {
+        consensusSuccesses++;
         pass1 = mergeTranscriptResults(pass1aResult, pass1bResult);
       }
 
@@ -290,12 +318,14 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         },
       });
 
+      consensusAttempts++;
       if (linkConsensusResult.runsCompleted === 0) {
         const errMsg = `segment ${i} pass3c: all link consensus runs failed`;
         log.warn(errMsg);
         errors.push(errMsg);
         pass3c = null;
       } else {
+        consensusSuccesses++;
         pass3c = linkConsensusResult.merged;
         pass3cRanOnce = true;
       }
@@ -362,6 +392,9 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       codeReconstruction: null,
       uncertainCodeFiles: undefined,
       interrupted: interruptedPasses,
+      tokenUsage: client.getTokenUsage(),
+      apiCallCount: client.getApiCallCount(),
+      ...(consensusAttempts > 0 ? { consensusAgreementRate: consensusSuccesses / consensusAttempts } : {}),
     };
   }
 
@@ -529,11 +562,13 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       },
     });
 
+    consensusAttempts++;
     if (consensusResult.runsCompleted === 0) {
       const errMsg = 'pass3a: all consensus runs failed';
       log.warn(errMsg);
       errors.push(errMsg);
     } else {
+      consensusSuccesses++;
       const validationResult = validateCodeReconstruction({
         consensusResult,
         pass2Results,
@@ -599,5 +634,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     codeReconstruction,
     uncertainCodeFiles,
     interrupted: undefined,
+    tokenUsage: client.getTokenUsage(),
+    apiCallCount: client.getApiCallCount(),
+    ...(consensusAttempts > 0 ? { consensusAgreementRate: consensusSuccesses / consensusAttempts } : {}),
   };
 }

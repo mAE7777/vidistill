@@ -4,7 +4,7 @@ import type { KeyframeEntry } from './combined.js';
 import type { PipelineResult, SegmentResult, Pass1Result, Pass2Result, SynthesisResult } from '../types/index.js';
 
 function makePipelineResult(segments: SegmentResult[]): PipelineResult {
-  return { segments, passesRun: [], errors: [] };
+  return { segments, passesRun: [], errors: [], apiCallCount: 0 };
 }
 
 function makeSegment(

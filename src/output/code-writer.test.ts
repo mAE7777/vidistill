@@ -6,7 +6,7 @@ function makePipelineResult(
   segments: SegmentResult[],
   codeReconstruction?: CodeReconstruction | null,
 ): PipelineResult {
-  return { segments, passesRun: [], errors: [], codeReconstruction };
+  return { segments, passesRun: [], errors: [], codeReconstruction, apiCallCount: 0 };
 }
 
 function makeSegment(index: number): SegmentResult {

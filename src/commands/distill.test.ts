@@ -27,6 +27,8 @@ const { mockLog, mockProgress, mockRunPipeline, mockGenerateOutput, mockShutdown
 vi.mock('@clack/prompts', () => ({
   log: mockLog,
   cancel: vi.fn(),
+  note: vi.fn(),
+  confirm: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('picocolors', () => ({
@@ -118,6 +120,7 @@ function basePipelineResult(overrides: Partial<PipelineResult> = {}): PipelineRe
     codeReconstruction: null,
     uncertainCodeFiles: undefined,
     interrupted: undefined,
+    apiCallCount: 0,
     ...overrides,
   };
 }

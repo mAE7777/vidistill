@@ -208,7 +208,12 @@ function makeValidationResult(overrides?: Partial<ValidationResult>): Validation
 }
 
 function makeClient(): GeminiClient {
-  return { generate: vi.fn() } as unknown as GeminiClient;
+  return {
+    generate: vi.fn(),
+    getTokenUsage: vi.fn().mockReturnValue({ promptTokens: 0, candidatesTokens: 0, totalTokens: 0 }),
+    resetTokenUsage: vi.fn(),
+    getApiCallCount: vi.fn().mockReturnValue(0),
+  } as unknown as GeminiClient;
 }
 
 function makeRateLimiter(): RateLimiter {

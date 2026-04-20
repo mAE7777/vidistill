@@ -308,6 +308,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     errors: string[];
     imageCount?: number;
     keyframes?: Array<{ timestamp: string; path: string; description: string }>;
+    apiCallCount?: number;
+    consensusAgreementRate?: number;
   }>(join(outputDir, 'metadata.json'));
 
   const videoTitle = metadata?.videoTitle ?? '';
@@ -345,6 +347,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     peopleExtraction: peopleExtraction ?? undefined,
     synthesisResult: synthesisResult ?? undefined,
     codeReconstruction: codeReconstruction ?? undefined,
+    apiCallCount: metadata?.apiCallCount ?? 0,
+    ...(metadata?.consensusAgreementRate != null ? { consensusAgreementRate: metadata.consensusAgreementRate } : {}),
   };
 
   // Helper: write a file only if content changed, and record it
