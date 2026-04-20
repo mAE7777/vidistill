@@ -103,6 +103,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     isShuttingDown,
     lang,
     channelAuthor,
+    quick,
   } = config;
 
   const errors: string[] = [];
@@ -129,6 +130,10 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
 
   strategy = determineStrategy(videoProfile);
 
+  if (quick) {
+    strategy = { ...strategy, passes: strategy.passes.filter(p => p !== 'implicit' && p !== 'people') };
+  }
+
   onProgress?.({ phase: 'pass0', segment: 0, totalSegments: 1, status: 'done' });
 
   // Build segment plan from strategy
@@ -146,6 +151,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         segments: [],
         passesRun: [],
         errors,
+        dedupRemovalCount: 0,
         videoProfile,
         strategy,
         synthesisResult: undefined,
@@ -163,7 +169,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
   const n = segments.length;
 
   // Calculate total steps for progress tracking
-  const transcriptConsensusRuns = TRANSCRIPT_CONSENSUS_RUNS;
+  const transcriptConsensusRuns = quick ? 1 : TRANSCRIPT_CONSENSUS_RUNS;
   const linkConsensusRuns = LINK_CONSENSUS_RUNS;
   const callsPerSegment =
     (transcriptConsensusRuns * 2) + 1 +
@@ -395,6 +401,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
       interrupted: interruptedPasses,
       tokenUsage: client.getTokenUsage(),
       apiCallCount: client.getApiCallCount(),
+      dedupRemovalCount: 0,
       ...(consensusAttempts > 0 ? { consensusAgreementRate: consensusSuccesses / consensusAttempts } : {}),
     };
   }
@@ -443,7 +450,9 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     }
   }
 
-  if (allEntries.length > 20) {
+  let dedupRemovalCount = 0;
+
+  if (!quick && allEntries.length > 20) {
     const chunks = chunkEntries(allEntries, 200, 20);
     const toRemove = new Set<number>();
 
@@ -496,6 +505,8 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
         p1.transcript_entries = p1.transcript_entries.filter((_, i) => !entryIndices.has(i));
       }
     }
+
+    dedupRemovalCount = toRemove.size;
   }
 
   // Pass 3b: People extraction (once, whole video)
@@ -637,6 +648,7 @@ export async function runPipeline(config: RunPipelineConfig): Promise<PipelineRe
     interrupted: undefined,
     tokenUsage: client.getTokenUsage(),
     apiCallCount: client.getApiCallCount(),
+    dedupRemovalCount,
     ...(consensusAttempts > 0 ? { consensusAgreementRate: consensusSuccesses / consensusAttempts } : {}),
   };
 }

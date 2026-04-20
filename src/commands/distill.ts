@@ -78,6 +78,8 @@ export interface DistillArgs {
   output: string;
   lang?: string;
   batch?: string;
+  quick?: boolean;
+  format?: string;
 }
 
 async function processSingleItem(
@@ -88,6 +90,8 @@ async function processSingleItem(
   apiKey: string,
   rateLimiter: RateLimiter,
   videoTitle?: string,
+  quick?: boolean,
+  format?: string,
 ): Promise<{ title: string; duration: number; finalOutputDir: string }> {
   const resolved = resolveInput(rawInput);
   const client = new GeminiClient(apiKey);
@@ -193,6 +197,7 @@ async function processSingleItem(
     },
     onWait: (delayMs) => progress.onWait(delayMs),
     isShuttingDown: () => shutdownHandler.isShuttingDown(),
+    quick,
   });
   const elapsedMs = Date.now() - startTime;
 
@@ -209,6 +214,7 @@ async function processSingleItem(
     processingTimeMs: elapsedMs,
     channelAuthor: ytAuthor,
     ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
+    ...(format === 'obsidian' ? { format: 'obsidian' as const } : {}),
   });
 
   return { title: finalTitle, duration, finalOutputDir };
@@ -241,6 +247,9 @@ async function runBatchMode(args: DistillArgs, apiKey: string): Promise<void> {
         args.lang,
         apiKey,
         rateLimiter,
+        undefined,
+        args.quick,
+        args.format,
       );
 
       resultItems.push({
@@ -430,6 +439,10 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   const rateLimiter = new RateLimiter();
   const progress = createProgressDisplay();
 
+  if (args.quick) {
+    log.info('Quick mode: consensus skipped, ~60% fewer API calls');
+  }
+
   // Step 9: Run the pipeline (Pass 0 + segmentation + passes happen internally)
   const startTime = Date.now();
   const pipelineResult = await runPipeline({
@@ -442,6 +455,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     lang: args.lang,
     channelAuthor: ytAuthor,
     rateLimiter,
+    quick: args.quick,
     onProgress: (status) => {
       progress.update(status);
       if (status.currentStep != null && status.totalSteps != null) {
@@ -484,6 +498,7 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     processingTimeMs: elapsedMs,
     channelAuthor: ytAuthor,
     ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
+    ...(args.format === 'obsidian' ? { format: 'obsidian' as const } : {}),
   });
 
   // Step 13: Post-pipeline summary
@@ -504,6 +519,30 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     const output = pipelineResult.tokenUsage.candidatesTokens.toLocaleString();
     summaryLines.push(`Tokens: ${prompt} prompt / ${output} output`);
   }
+
+  // Quality metrics
+  const totalTranscriptEntries = pipelineResult.segments.reduce((sum, seg) => {
+    return sum + (seg.pass1?.transcript_entries.length ?? 0);
+  }, 0);
+  const durationMinutes = duration / 60;
+  const rawCoverage = durationMinutes > 0 ? totalTranscriptEntries / (durationMinutes * 15) : 0;
+  const coveragePct = Math.min(100, Math.round(rawCoverage * 100));
+  summaryLines.push(`Transcript coverage: ${coveragePct}%`);
+
+  const codeFileCount = pipelineResult.codeReconstruction?.files.length ?? 0;
+  if (codeFileCount > 0) {
+    summaryLines.push(`Code files: ${codeFileCount}`);
+  }
+
+  const speakerCount = pipelineResult.videoProfile?.speakers.count ?? 0;
+  if (speakerCount > 0) {
+    summaryLines.push(`Speakers detected: ${speakerCount}`);
+  }
+
+  if ((pipelineResult.dedupRemovalCount ?? 0) > 0) {
+    summaryLines.push(`Dedup removals: ${pipelineResult.dedupRemovalCount}`);
+  }
+
   note(summaryLines.join('\n'), 'Summary');
 
   log.success(`Done in ${elapsed}`);

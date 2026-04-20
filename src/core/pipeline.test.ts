@@ -1573,4 +1573,147 @@ describe('runPipeline', () => {
 
     logWarnSpy.mockRestore();
   });
+
+  // --- Quick mode tests ---
+
+  describe('quick mode', () => {
+    it('transcription consensus runs only once per segment when quick: true', async () => {
+      const noSpecialistStrategy: PassStrategy = {
+        passes: ['transcript', 'visual'],
+        resolution: 'medium',
+        segmentMinutes: 10,
+      };
+      mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+      mockCreateSegmentPlan.mockReturnValue({
+        segments: [{ index: 0, startTime: 0, endTime: 600 }],
+        resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      });
+
+      // Override the default transcription consensus mock for single segment
+      mockRunTranscriptionConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return { result: makePass1a(0), runsCompleted: 1, runsAttempted: 1 };
+      });
+      mockRunDiarizationConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return makePass1b();
+      });
+      mockMergeTranscriptResults.mockReturnValueOnce(makePass1(0));
+      mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+      const promise = runPipeline(baseConfig({ quick: true }));
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Transcription consensus called with runs: 1
+      expect(mockRunTranscriptionConsensus).toHaveBeenCalledTimes(1);
+      const args = mockRunTranscriptionConsensus.mock.calls[0][0] as any;
+      expect(args.config.runs).toBe(1);
+
+      // Diarization consensus called with runs: 1
+      expect(mockRunDiarizationConsensus).toHaveBeenCalledTimes(1);
+      const diarArgs = mockRunDiarizationConsensus.mock.calls[0][0] as any;
+      expect(diarArgs.config.runs).toBe(1);
+    });
+
+    it('implicit and people are excluded from strategy when quick: true', async () => {
+      const fullStrategy: PassStrategy = {
+        passes: ['transcript', 'visual', 'code', 'people', 'chat', 'implicit', 'synthesis'],
+        resolution: 'medium',
+        segmentMinutes: 10,
+      };
+      mockDetermineStrategy.mockReturnValue(fullStrategy);
+      mockCreateSegmentPlan.mockReturnValue({
+        segments: [{ index: 0, startTime: 0, endTime: 600 }],
+        resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      });
+
+      mockRunTranscriptionConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return { result: makePass1a(0), runsCompleted: 1, runsAttempted: 1 };
+      });
+      mockRunDiarizationConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return makePass1b();
+      });
+      mockMergeTranscriptResults.mockReturnValueOnce(makePass1(0));
+      mockRunVisual.mockResolvedValueOnce(makePass2(0));
+      mockRunLinkConsensus.mockResolvedValueOnce(makeLinkConsensusResult());
+      mockRunCodeConsensus.mockResolvedValue(makeConsensusResult());
+      mockValidateCodeReconstruction.mockReturnValue(makeValidationResult());
+      mockRunSynthesis.mockResolvedValue(makeSynthesisResult());
+
+      const promise = runPipeline(baseConfig({ quick: true }));
+      await vi.runAllTimersAsync();
+      const result = await promise;
+
+      // implicit and people should not have run
+      expect(mockRunImplicitSignals).not.toHaveBeenCalled();
+      expect(mockRunPeopleExtraction).not.toHaveBeenCalled();
+
+      // strategy in result should not contain implicit or people
+      expect(result.strategy!.passes).not.toContain('implicit');
+      expect(result.strategy!.passes).not.toContain('people');
+    });
+
+    it('LM dedup is skipped when quick: true even with >20 entries', async () => {
+      const noSpecialistStrategy: PassStrategy = {
+        passes: ['transcript', 'visual'],
+        resolution: 'medium',
+        segmentMinutes: 10,
+      };
+      mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+      mockCreateSegmentPlan.mockReturnValue({
+        segments: [{ index: 0, startTime: 0, endTime: 600 }],
+        resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      });
+
+      // 150 entries — enough to trigger dedup if not skipped
+      mockRunTranscriptionConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return { result: makePass1a(0), runsCompleted: 1, runsAttempted: 1 };
+      });
+      mockRunDiarizationConsensus.mockImplementationOnce(async (params: any) => {
+        params.onProgress?.(1, 1);
+        return makePass1b();
+      });
+      mockMergeTranscriptResults.mockReturnValueOnce(makePass1WithEntries(0, 150));
+      mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+      const client = makeClient();
+      vi.mocked(client.generate).mockResolvedValue({ duplicate_indices: [] } as any);
+
+      const promise = runPipeline(baseConfig({ client, quick: true }));
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // generate should NOT have been called (dedup skipped)
+      expect(vi.mocked(client.generate)).not.toHaveBeenCalled();
+    });
+
+    it('quick: false/undefined produces identical behavior to current (consensus runs 3 times)', async () => {
+      const noSpecialistStrategy: PassStrategy = {
+        passes: ['transcript', 'visual'],
+        resolution: 'medium',
+        segmentMinutes: 10,
+      };
+      mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+      mockCreateSegmentPlan.mockReturnValue({
+        segments: [{ index: 0, startTime: 0, endTime: 600 }],
+        resolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+      });
+      mockRunVisual.mockResolvedValueOnce(makePass2(0));
+
+      const promise = runPipeline(baseConfig());
+      await vi.runAllTimersAsync();
+      await promise;
+
+      // Default mock fires onProgress 3 times per segment — verifies runs: 3
+      const args = mockRunTranscriptionConsensus.mock.calls[0][0] as any;
+      expect(args.config.runs).toBe(3);
+
+      const diarArgs = mockRunDiarizationConsensus.mock.calls[0][0] as any;
+      expect(diarArgs.config.runs).toBe(3);
+    });
+  });
 });

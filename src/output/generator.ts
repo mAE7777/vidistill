@@ -27,6 +27,8 @@ import { writeChat } from './chat.js';
 import { writeLinks, scanTranscriptForUrls } from './links.js';
 import { writeActionItems } from './action-items.js';
 import { writeMetadata, writeRawOutput } from './metadata.js';
+import { addYamlFrontmatter, addWikilinks } from './obsidian.js';
+import type { ObsidianMetadata } from './obsidian.js';
 import { readJsonFile, buildExpandedMapping } from '../lib/utils.js';
 
 /**
@@ -76,7 +78,7 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
 }
 
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
-  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges, inputFilePath } = params;
+  const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges, inputFilePath, format } = params;
   let { keyframes } = params;
 
   const slug = slugify(videoTitle);
@@ -135,10 +137,51 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     filesGenerated.push(filename);
   }
 
+  /**
+   * Apply obsidian post-processing (frontmatter + wikilinks) to a markdown file's content.
+   * Only runs when format === 'obsidian' and the file is a .md file (not in raw/ or code/).
+   * For guide.md: uses full metadata including speakers from videoProfile.
+   * For all other .md files: uses a title derived from the filename.
+   * filesGenerated is captured at call time — pass it explicitly so guide.md gets the full list.
+   */
+  function applyObsidianFormat(filename: string, content: string, currentFilesGenerated: string[]): string {
+    if (format !== 'obsidian') return content;
+    if (!filename.endsWith('.md')) return content;
+    // Skip raw/ directory files
+    if (filename.startsWith('raw/')) return content;
+
+    const today = new Date().toISOString().split('T')[0];
+    const videoType = pipelineResult.videoProfile?.type ?? 'unknown';
+    const speakers = pipelineResult.videoProfile?.speakers.identified ?? [];
+
+    let title: string;
+    if (filename === 'guide.md') {
+      title = videoTitle;
+    } else {
+      // Derive a display title from the base filename, e.g. "transcript.md" → "Transcript"
+      const base = filename.split('/').pop() ?? filename;
+      const withoutExt = base.endsWith('.md') ? base.slice(0, -3) : base;
+      title = withoutExt.charAt(0).toUpperCase() + withoutExt.slice(1).replace(/-/g, ' ');
+    }
+
+    const metadata: ObsidianMetadata = {
+      title,
+      date: today,
+      source,
+      duration,
+      videoType,
+      speakers,
+    };
+
+    let result = addYamlFrontmatter(content, metadata);
+    result = addWikilinks(result, currentFilesGenerated.filter((f) => f.endsWith('.md')));
+    return result;
+  }
+
   // Step 2a: transcript.md — always generated
   try {
     const content = writeTranscript({ pipelineResult, speakerMapping: expandedMapping });
-    await writeOutputFile('transcript.md', content);
+    await writeOutputFile('transcript.md', applyObsidianFormat('transcript.md', content, filesGenerated));
   } catch (err) {
     errors.push(`transcript.md: ${String(err)}`);
   }
@@ -147,7 +190,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   if (filesToGenerate.has('combined.md')) {
     try {
       const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult, keyframes });
-      await writeOutputFile('combined.md', content);
+      await writeOutputFile('combined.md', applyObsidianFormat('combined.md', content, filesGenerated));
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
     }
@@ -158,7 +201,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     try {
       const uncertainSet = new Set(pipelineResult.uncertainCodeFiles ?? []);
       const { files, timeline } = writeCodeFiles({ pipelineResult, uncertainFiles: uncertainSet });
-      // Write individual code files
+      // Write individual code files (not markdown — no obsidian post-processing)
       for (const [filename, content] of files) {
         try {
           await writeOutputFile(`code/${filename}`, content);
@@ -168,7 +211,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       }
       // Write code timeline
       try {
-        await writeOutputFile('code/code-timeline.md', timeline);
+        await writeOutputFile('code/code-timeline.md', applyObsidianFormat('code/code-timeline.md', timeline, filesGenerated));
       } catch (tlErr) {
         errors.push(`code/code-timeline.md: ${String(tlErr)}`);
       }
@@ -182,7 +225,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     try {
       const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) {
-        await writeOutputFile('notes.md', content);
+        await writeOutputFile('notes.md', applyObsidianFormat('notes.md', content, filesGenerated));
       }
     } catch (err) {
       errors.push(`notes.md: ${String(err)}`);
@@ -194,7 +237,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     try {
       const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping, declinedMerges });
       if (content != null) {
-        await writeOutputFile('people.md', content);
+        await writeOutputFile('people.md', applyObsidianFormat('people.md', content, filesGenerated));
       }
     } catch (err) {
       errors.push(`people.md: ${String(err)}`);
@@ -206,7 +249,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     try {
       const content = writeChat({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
       if (content != null) {
-        await writeOutputFile('chat.md', content);
+        await writeOutputFile('chat.md', applyObsidianFormat('chat.md', content, filesGenerated));
       }
     } catch (err) {
       errors.push(`chat.md: ${String(err)}`);
@@ -218,7 +261,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
     try {
       const content = writeLinks({ segments: pipelineResult.segments });
       if (content != null) {
-        await writeOutputFile('links.md', content);
+        await writeOutputFile('links.md', applyObsidianFormat('links.md', content, filesGenerated));
       }
     } catch (err) {
       errors.push(`links.md: ${String(err)}`);
@@ -234,7 +277,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
         speakerMapping: expandedMapping,
       });
       if (content != null) {
-        await writeOutputFile('action-items.md', content);
+        await writeOutputFile('action-items.md', applyObsidianFormat('action-items.md', content, filesGenerated));
       }
     } catch (err) {
       errors.push(`action-items.md: ${String(err)}`);
@@ -270,6 +313,7 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
       speakerMapping,
       ...(imageFiles.length > 0 ? { imageCount: imageFiles.length } : {}),
       ...(keyframes != null && keyframes.length > 0 ? { keyframes } : {}),
+      ...(format != null && format !== 'standard' ? { format } : {}),
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {
@@ -279,7 +323,8 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
   // Step 5: guide.md — always generated, written LAST (needs full filesGenerated list)
   try {
     const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping, channelAuthor });
-    await writeOutputFile('guide.md', content);
+    // guide.md gets the full filesGenerated at this point (all other files written)
+    await writeOutputFile('guide.md', applyObsidianFormat('guide.md', content, filesGenerated));
   } catch (err) {
     errors.push(`guide.md: ${String(err)}`);
   }
@@ -312,6 +357,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     apiCallCount?: number;
     consensusAgreementRate?: number;
     tokenUsage?: TokenUsage;
+    format?: 'standard' | 'obsidian';
   }>(join(outputDir, 'metadata.json'));
 
   const videoTitle = metadata?.videoTitle ?? '';
@@ -321,6 +367,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   const processingTimeMs = metadata?.processingTimeMs ?? 0;
   const filesGenerated = metadata?.filesGenerated ?? [];
   const storedKeyframes = metadata?.keyframes;
+  // Use format from params if provided, otherwise fall back to stored format
+  const format: 'standard' | 'obsidian' | undefined = params.format ?? metadata?.format;
 
   // Reconstruct PipelineResult from raw/ JSON
   const rawDir = join(outputDir, 'raw');
@@ -372,6 +420,32 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     filesWritten.push(filename);
   }
 
+  /** Apply obsidian post-processing for the re-render path. */
+  function applyObsidianFormat(filename: string, content: string): string {
+    if (format !== 'obsidian') return content;
+    if (!filename.endsWith('.md')) return content;
+    if (filename.startsWith('raw/')) return content;
+
+    const today = new Date().toISOString().split('T')[0];
+    const videoType = pipelineResult.videoProfile?.type ?? 'unknown';
+    const speakers = pipelineResult.videoProfile?.speakers.identified ?? [];
+
+    let title: string;
+    if (filename === 'guide.md') {
+      title = videoTitle;
+    } else {
+      const base = filename.split('/').pop() ?? filename;
+      const withoutExt = base.endsWith('.md') ? base.slice(0, -3) : base;
+      title = withoutExt.charAt(0).toUpperCase() + withoutExt.slice(1).replace(/-/g, ' ');
+    }
+
+    const obsMetadata: ObsidianMetadata = { title, date: today, source, duration, videoType, speakers };
+    const mdFiles = filesGenerated.filter((f) => f.endsWith('.md'));
+    let result = addYamlFrontmatter(content, obsMetadata);
+    result = addWikilinks(result, mdFiles);
+    return result;
+  }
+
   // Build expanded mapping that includes detected-name keys for cross-referencing
   const expandedMapping = buildExpandedMapping(pipelineResult.segments, speakerMapping, pipelineResult.peopleExtraction);
 
@@ -381,7 +455,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('transcript.md')) {
     try {
       const content = writeTranscript({ pipelineResult, speakerMapping: expandedMapping });
-      await writeOutputFile('transcript.md', content);
+      await writeOutputFile('transcript.md', applyObsidianFormat('transcript.md', content));
     } catch (err) {
       errors.push(`transcript.md: ${String(err)}`);
     }
@@ -390,7 +464,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('combined.md')) {
     try {
       const content = writeCombined({ pipelineResult, speakerMapping: expandedMapping, synthesisResult: pipelineResult.synthesisResult, keyframes: storedKeyframes });
-      await writeOutputFile('combined.md', content);
+      await writeOutputFile('combined.md', applyObsidianFormat('combined.md', content));
     } catch (err) {
       errors.push(`combined.md: ${String(err)}`);
     }
@@ -399,7 +473,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('notes.md')) {
     try {
       const content = writeNotes({ synthesisResult: pipelineResult.synthesisResult, segments: pipelineResult.segments, speakerMapping: expandedMapping });
-      if (content != null) await writeOutputFile('notes.md', content);
+      if (content != null) await writeOutputFile('notes.md', applyObsidianFormat('notes.md', content));
     } catch (err) {
       errors.push(`notes.md: ${String(err)}`);
     }
@@ -408,7 +482,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('people.md')) {
     try {
       const content = writePeople({ peopleExtraction: pipelineResult.peopleExtraction, speakerMapping: expandedMapping, declinedMerges });
-      if (content != null) await writeOutputFile('people.md', content);
+      if (content != null) await writeOutputFile('people.md', applyObsidianFormat('people.md', content));
     } catch (err) {
       errors.push(`people.md: ${String(err)}`);
     }
@@ -417,7 +491,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('chat.md')) {
     try {
       const content = writeChat({ segments: pipelineResult.segments, speakerMapping: expandedMapping });
-      if (content != null) await writeOutputFile('chat.md', content);
+      if (content != null) await writeOutputFile('chat.md', applyObsidianFormat('chat.md', content));
     } catch (err) {
       errors.push(`chat.md: ${String(err)}`);
     }
@@ -430,7 +504,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
         synthesisResult: pipelineResult.synthesisResult,
         speakerMapping: expandedMapping,
       });
-      if (content != null) await writeOutputFile('action-items.md', content);
+      if (content != null) await writeOutputFile('action-items.md', applyObsidianFormat('action-items.md', content));
     } catch (err) {
       errors.push(`action-items.md: ${String(err)}`);
     }
@@ -439,7 +513,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
   if (filesToReRender.has('guide.md')) {
     try {
       const content = writeGuide({ title: videoTitle, source, duration, pipelineResult, filesGenerated, speakerMapping: expandedMapping });
-      await writeOutputFile('guide.md', content);
+      await writeOutputFile('guide.md', applyObsidianFormat('guide.md', content));
     } catch (err) {
       errors.push(`guide.md: ${String(err)}`);
     }
@@ -460,6 +534,7 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
       declinedMerges,
       ...(imageCount != null && imageCount > 0 ? { imageCount } : {}),
       ...(storedKeyframes != null && storedKeyframes.length > 0 ? { keyframes: storedKeyframes } : {}),
+      ...(format != null && format !== 'standard' ? { format } : {}),
     });
     await writeOutputFile('metadata.json', content);
   } catch (err) {

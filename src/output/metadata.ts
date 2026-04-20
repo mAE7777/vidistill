@@ -24,6 +24,7 @@ export interface MetadataOutput {
   tokenUsage?: TokenUsage;
   apiCallCount?: number;
   consensusAgreementRate?: number;
+  format?: 'standard' | 'obsidian';
 }
 
 export interface WriteMetadataParams {
@@ -38,10 +39,11 @@ export interface WriteMetadataParams {
   keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   speakerMapping?: SpeakerMapping;
   declinedMerges?: [string, string][];
+  format?: 'standard' | 'obsidian';
 }
 
 export function writeMetadata(params: WriteMetadataParams): string {
-  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, imageCount, keyframes, speakerMapping, declinedMerges } = params;
+  const { title, source, duration, model, processingTimeMs, filesGenerated, pipelineResult, imageCount, keyframes, speakerMapping, declinedMerges, format } = params;
   const { passesRun, segments, errors, videoProfile, tokenUsage, apiCallCount, consensusAgreementRate } = pipelineResult;
 
   const output: MetadataOutput = {
@@ -63,6 +65,7 @@ export function writeMetadata(params: WriteMetadataParams): string {
     ...(tokenUsage != null ? { tokenUsage } : {}),
     ...(apiCallCount != null ? { apiCallCount } : {}),
     ...(consensusAgreementRate != null ? { consensusAgreementRate } : {}),
+    ...(format != null && format !== 'standard' ? { format } : {}),
   };
 
   return JSON.stringify(output, null, 2);

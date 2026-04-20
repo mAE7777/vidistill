@@ -4,6 +4,7 @@ import { showLogo, showIntro } from './ui.js';
 import { runDistill } from '../commands/distill.js';
 import { run as runMcp } from '../commands/mcp.js';
 import { run as runRenameSpeakers } from '../commands/rename-speakers.js';
+import { run as runList } from '../commands/list.js';
 
 declare const VIDISTILL_VERSION: string;
 const version = VIDISTILL_VERSION;
@@ -13,6 +14,7 @@ const DEFAULT_OUTPUT = './vidistill-output/';
 const SUBCOMMANDS: Record<string, (args: string[]) => Promise<void>> = {
   mcp: runMcp,
   'rename-speakers': runRenameSpeakers,
+  list: runList,
 };
 
 const main = defineCommand({
@@ -48,6 +50,18 @@ const main = defineCommand({
       description: 'Path to a batch file containing URLs/paths to process',
       alias: 'b',
     },
+    quick: {
+      type: 'boolean',
+      description: 'Quick mode — skip consensus for faster results',
+      alias: 'q',
+      default: false,
+    },
+    format: {
+      type: 'string',
+      description: 'Output format: standard (default) or obsidian (YAML frontmatter + wikilinks)',
+      alias: 'f',
+      default: 'standard',
+    },
   },
   async run({ args }) {
     const name = args.input;
@@ -80,6 +94,8 @@ const main = defineCommand({
         output: args.output,
         lang: args.lang,
         batch: args.batch,
+        quick: args.quick,
+        format: args.format,
       });
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);

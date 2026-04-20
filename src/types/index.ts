@@ -287,6 +287,7 @@ export interface PipelineResult {
   tokenUsage?: TokenUsage;
   apiCallCount: number;
   consensusAgreementRate?: number;
+  dedupRemovalCount?: number;
 }
 
 export interface PassResult<T> {
@@ -316,6 +317,7 @@ export interface RunPipelineConfig {
   onWait?: (delayMs: number) => void;
   isShuttingDown?: () => boolean;
   onPass0Complete?: (profile: VideoProfile, strategy: PassStrategy, segmentCount: number) => Promise<boolean>;
+  quick?: boolean;
 }
 
 export interface GenerateOutputParams {
@@ -331,12 +333,14 @@ export interface GenerateOutputParams {
   declinedMerges?: [string, string][];
   keyframes?: Array<{ timestamp: string; path: string; description: string }>;
   inputFilePath?: string;
+  format?: 'standard' | 'obsidian';
 }
 
 export interface ReRenderWithSpeakerMappingParams {
   outputDir: string;
   speakerMapping: SpeakerMapping;
   declinedMerges?: [string, string][];
+  format?: 'standard' | 'obsidian';
 }
 
 export interface OutputResult {

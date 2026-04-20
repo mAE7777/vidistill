@@ -1,16 +1,64 @@
 # vidistill
 
-Video intelligence distiller — turn any video or audio file into structured notes, transcripts, and insights using Gemini.
+Turn coding tutorials into source trees your AI editor can read.
 
-Feed it a YouTube URL, local video, or audio file. It analyzes the content through multiple AI passes (scene analysis, transcript, visuals, code extraction, people, chat, implicit signals) and synthesizes everything into organized markdown output.
+vidistill watches a video — YouTube, local file, or any yt-dlp-supported URL — and distills it into structured markdown, reconstructed source files, transcripts, and speaker-attributed notes. Feed it a 40-minute React tutorial and get back the exact files the instructor typed, a timestamped transcript, and a navigable guide. Feed it a team meeting and get action items, speaker profiles, and chat messages.
 
-## Install
+## MCP Quick-Start
 
-```
+Use vidistill as an MCP server so Claude Code (or any MCP-compatible tool) can analyze videos and query results directly.
+
+```bash
+# 1. Install
 npm install -g vidistill
+
+# 2. Register the MCP server
+claude mcp add vidistill -- npx vidistill mcp
+
+# 3. Ask Claude to analyze a video
+#    "Analyze this tutorial and show me the code files"
 ```
 
-Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/). Non-YouTube URLs also require [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+**Available tools:**
+
+| Tool | Description |
+|------|-------------|
+| `analyze_video` | Run the full pipeline on a URL or file |
+| `get_transcript` | Read transcript with optional time range filter |
+| `get_code` | Read reconstructed source files |
+| `get_notes` | Overview, decisions, concepts, topics |
+| `get_people` | Speaker/participant details |
+| `get_action_items` | Tasks assigned during the video |
+| `get_links` | All URLs mentioned |
+| `get_chat` | Chat messages from streams/meetings |
+
+## Before / After
+
+**Input:** a YouTube tutorial URL
+
+**Output:**
+
+```
+vidistill-output/react-server-components/
+├── guide.md              # overview and navigation
+├── transcript.md          # full timestamped transcript
+├── combined.md            # transcript + visual notes + screenshots
+├── notes.md               # synthesized notes and themes
+├── code/                  # reconstructed source files
+│   ├── app.tsx
+│   ├── server-component.tsx
+│   └── code-timeline.md   # code evolution timeline
+├── images/                # keyframe screenshots
+│   └── frame-*.png
+├── people.md              # speakers and participants
+├── chat.md                # chat messages and links
+├── action-items.md        # tasks and follow-ups
+├── links.md               # all URLs mentioned
+├── metadata.json          # processing metadata
+└── raw/                   # raw pass outputs
+```
+
+Which files are generated depends on the content — coding videos get `code/`, meetings get `people.md` and `action-items.md`, etc.
 
 ## Usage
 
@@ -18,48 +66,48 @@ Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/). Non-YouTube URLs also re
 vidistill [input] [options]
 ```
 
-**Arguments:**
-
-- `input` — YouTube URL, video URL from any yt-dlp-supported site, local video, or audio file path (prompted interactively if omitted)
-
-**Options:**
-
-- `-c, --context` — context about the video (e.g. "CS lecture", "product demo")
-- `-o, --output` — output directory (default: `./vidistill-output/`)
-- `-l, --lang <code>` — output language (e.g. `zh`, `ja`, `ko`, `es`, `fr`, `de`, `pt`, `ru`, `ar`, `hi`)
-- `-b, --batch <file>` — path to a batch file for processing multiple videos
+| Flag | Description |
+|------|-------------|
+| `input` | YouTube URL, video URL, local video/audio path (prompted if omitted) |
+| `-c, --context` | Context about the video (e.g. "CS lecture") |
+| `-o, --output` | Output directory (default: `./vidistill-output/`) |
+| `-l, --lang` | Output language (e.g. `zh`, `ja`, `es`) |
+| `-b, --batch` | Path to a batch file for processing multiple videos |
+| `-q, --quick` | Quick mode — skip consensus for faster results (~60% fewer API calls) |
+| `-f, --format` | Output format: `standard` (default) or `obsidian` (YAML frontmatter + wikilinks) |
 
 **Examples:**
 
 ```bash
-# Interactive mode — prompts for everything
+# Interactive mode
 vidistill
 
 # YouTube video
 vidistill "https://youtube.com/watch?v=dQw4w9WgXcQ"
 
 # Local file with context
-vidistill ./lecture.mp4 --context "distributed systems lecture"
+vidistill ./lecture.mp4 --context "distributed systems"
 
-# Audio file
-vidistill ./podcast.mp3
+# Quick mode — faster, fewer API calls
+vidistill ./demo.mp4 --quick
 
-# Custom output directory
-vidistill ./demo.mp4 -o ./notes/
-
-# Output in another language
-vidistill ./lecture.mp4 --lang zh
+# Obsidian-friendly output
+vidistill ./lecture.mp4 --format obsidian
 
 # Non-YouTube URL (Bilibili, Vimeo, Twitter/X, etc.)
 vidistill "https://vimeo.com/123456789"
 
-# Batch processing — one URL/path per line
+# Batch processing
 vidistill --batch videos.txt
+
+# List previous outputs
+vidistill list
+vidistill list --dir ./custom-output/
 ```
 
 ### Batch Files
 
-Batch files list one video URL or file path per line. Lines starting with `#` are comments. Add optional context after a `|` separator:
+One URL or file path per line. Lines starting with `#` are comments. Add context after a `|` separator:
 
 ```
 # Lectures
@@ -70,7 +118,39 @@ https://vimeo.com/123456|networking basics
 ./recording.mp4|team standup
 ```
 
-After processing, an `index.md` is generated in the output directory listing all results.
+### Listing Outputs
+
+```bash
+vidistill list
+```
+
+Scans `./vidistill-output/` (or `--dir <path>`) and displays a table of all processed videos with title, duration, type, date, and file count.
+
+## Speaker Naming
+
+When multiple speakers are detected, use `rename-speakers` to assign real names. Names replace generic labels (SPEAKER_00, SPEAKER_01) across all output files.
+
+```bash
+# Interactive rename
+vidistill rename-speakers ./vidistill-output/my-meeting/
+
+# List current speaker state
+vidistill rename-speakers ./vidistill-output/my-meeting/ --list
+
+# Quick rename
+vidistill rename-speakers ./vidistill-output/my-meeting/ --rename "Steven Kang" "Steven K."
+
+# Merge duplicate speakers
+vidistill rename-speakers ./vidistill-output/my-meeting/ --merge "K Iphone" "Kristian"
+```
+
+## Install
+
+```
+npm install -g vidistill
+```
+
+Requires Node.js 22+ and [ffmpeg](https://ffmpeg.org/). Non-YouTube URLs also require [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## API Key
 
@@ -78,105 +158,22 @@ vidistill needs a Gemini API key. It checks these sources in order:
 
 1. `GEMINI_API_KEY` environment variable
 2. `~/.vidistill/config.json`
-3. Interactive prompt (with option to save for next time)
+3. Interactive prompt (with option to save)
 
 Get a key at [ai.google.dev](https://ai.google.dev/).
 
-## Output
-
-vidistill creates a folder per video with structured files:
-
-```
-vidistill-output/my-video/
-├── guide.md           # overview and navigation
-├── transcript.md      # full timestamped transcript
-├── combined.md        # transcript + visual notes + screenshots merged
-├── notes.md           # notes, implicit questions/decisions, recurring themes
-├── code/              # extracted and reconstructed source files
-│   ├── *.ext          # individual source files
-│   └── code-timeline.md  # code evolution timeline
-├── images/            # keyframe screenshots at visual change points
-│   └── frame-*.png    # extracted frames (slide transitions, diagrams, etc.)
-├── people.md          # speakers and participants
-├── chat.md            # chat messages and links
-├── action-items.md    # tasks and follow-ups
-├── links.md           # all URLs mentioned
-├── timeline.html      # interactive visual timeline
-├── metadata.json      # processing metadata
-└── raw/               # raw pass outputs
-```
-
-Which files are generated depends on the video content — a coding tutorial gets `code/`, a meeting gets `people.md` and `action-items.md`, etc.
-
-### Speaker Naming
-
-When multiple speakers are detected, use `rename-speakers` to assign real names. Names replace generic labels (SPEAKER_00, SPEAKER_01) in all output files.
-
-To rename speakers:
-
-```bash
-# Interactive rename — prompts for each speaker
-vidistill rename-speakers ./vidistill-output/my-meeting/
-
-# List current speaker state
-vidistill rename-speakers ./vidistill-output/my-meeting/ --list
-
-# Quick rename a single speaker
-vidistill rename-speakers ./vidistill-output/my-meeting/ --rename "Steven Kang" "Steven K."
-
-# Merge two speakers (e.g. same person on different devices)
-vidistill rename-speakers ./vidistill-output/my-meeting/ --merge "K Iphone" "Kristian"
-```
-
-## MCP Server
-
-vidistill can run as an MCP server, letting AI coding tools (Claude Code, Cursor, etc.) analyze videos and read output directly.
-
-```bash
-vidistill mcp
-```
-
-To configure in Claude Code:
-
-```bash
-claude mcp add vidistill -- npx vidistill mcp
-```
-
-**Tools exposed:**
-
-- `analyze_video` — run the full pipeline on a URL or file, returns output dir + summary
-- `get_transcript` — read transcript from an existing output dir, with optional time range filtering
-- `get_code` — read extracted code files from an existing output dir
-- `get_notes` — read synthesized notes (overview, decisions, concepts, topics, suggestions)
-- `get_people` — read speaker/participant details (name, role, organization, contributions)
-- `get_action_items` — read assigned tasks from implicit signals analysis
-- `get_links` — read all URLs mentioned in the video
-- `get_chat` — read chat messages from live streams or meetings
-
-Requires `GEMINI_API_KEY` set as environment variable or in `~/.vidistill/config.json`.
-
 ## How It Works
 
-Supported video formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP. Supported audio formats: MP3, AAC, WAV, FLAC, OGG, M4A.
+Supported formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP (video) and MP3, AAC, WAV, FLAC, OGG, M4A (audio).
 
-1. **Input** — accepts YouTube URL directly or reads local file (video or audio), compresses if over 2GB
-2. **Pass 0** — scene analysis to classify video type and determine processing strategy
-3. **Pass 1a** — pure verbatim transcription (timestamps, tone, emphasis — no speaker labels), runs 3x with consensus alignment
-4. **Pass 1b** — speaker diarization (assigns SPEAKER_XX labels to transcript entries using voice and visual cues, then merged with 1a), runs 3x with majority voting
-5. **Pass 2** — visual content extraction (screen states, diagrams, slides)
-6. **Pass 3** — specialist passes based on video type:
-   - 3c: chat and links (live streams) — per segment, runs 3x with consensus voting
-   - 3d: implicit signals (all types) — per segment
-   - 3b: people and social dynamics (meetings) — whole video, anchored to transcript speakers
-   - 3a: code reconstruction (coding videos) — whole video, runs 3x with consensus voting and validation
-7. **Synthesis** — cross-references all passes into unified analysis
-8. **Output** — generates structured markdown files
+1. **Pass 0** — scene analysis classifies the video and determines processing strategy
+2. **Pass 1a/1b** — transcription + speaker diarization, each running 3x with consensus alignment
+3. **Pass 2** — visual content extraction (code, slides, diagrams, screen states)
+4. **Pass 3** — specialist passes: chat/links (3c), implicit signals (3d), people (3b), code reconstruction (3a, 3x consensus + validation)
+5. **Synthesis** — cross-references all passes into unified analysis
+6. **Output** — structured markdown and source files
 
-Audio files skip visual passes and go straight to transcript, people, implicit signals, and synthesis.
-
-Long videos are segmented automatically. Passes that fail are skipped gracefully.
-
-In interactive mode, a cost estimate is shown after scene analysis (API call count and estimated duration). After the pipeline completes, a summary displays actual API calls, duration, consensus rate, and token usage. These metrics are also saved to `metadata.json`.
+Long videos are segmented automatically. Failed passes are skipped gracefully. In interactive mode, a cost estimate is shown before processing and a quality summary (coverage, consensus rate, tokens) is displayed after.
 
 ## License
 
