@@ -23,7 +23,7 @@ function parseDir(args: string[]): string {
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+  const s = Math.round(seconds % 60);
   return `${String(m)}m ${String(s)}s`;
 }
 

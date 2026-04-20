@@ -74,6 +74,12 @@ const main = defineCommand({
     const { log } = await import('@clack/prompts');
     const { default: pc } = await import('picocolors');
 
+    const VALID_FORMATS = ['standard', 'obsidian'];
+    if (!VALID_FORMATS.includes(args.format)) {
+      log.error(`Invalid format "${args.format}". Valid formats: ${VALID_FORMATS.join(', ')}`);
+      process.exit(1);
+    }
+
     if (args.batch != null && args.input != null) {
       log.error('--batch and a positional input URL are mutually exclusive. Use one or the other.');
       process.exit(1);
