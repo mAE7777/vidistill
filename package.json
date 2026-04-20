@@ -1,6 +1,6 @@
 {
   "name": "vidistill",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Video intelligence distiller — extract structured notes, transcripts, and insights from any video using Gemini",
   "type": "module",
   "license": "MIT",

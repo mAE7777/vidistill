@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.8.0] - 2026-04-20
+
+### Added
+- Non-YouTube URL support — any yt-dlp-supported site (Vimeo, Bilibili, etc.) downloads, extracts metadata, and processes through the full pipeline
+- Batch processing — `--batch <file>` processes multiple videos sequentially with per-item error isolation and an `index.md` summary
+- Keyframe extraction — extracts visual keyframes (slides, diagrams, whiteboard changes) from local video files via ffmpeg, embedded as screenshots in combined.md
+- 5 new MCP tools: `get_notes`, `get_people`, `get_action_items`, `get_links`, `get_chat` — full knowledge graph exposed through the MCP server (8 tools total)
+- Pre-pipeline cost estimate — shows predicted API calls and time range before processing, with confirmation prompt
+- Post-pipeline quality summary — transcript coverage, code file count, speaker count, consensus rate, dedup removals, token usage
+- `--quick` / `-q` mode — skips consensus, implicit, people, and dedup passes for ~60% fewer API calls
+- `--format obsidian` — adds YAML frontmatter and wikilinks to all markdown output
+- `vidistill list` command — scans output directories and displays a metadata table
+- Fuzzy speaker reconciliation — Jaccard token overlap with temporal non-overlap guards for cross-segment speaker merging ("Dr. Sarah Chen" and "Sarah Chen")
+- Transcript URL fallback — links.md now scans transcript text for URLs when pass3c doesn't run
+- Token usage tracking in metadata.json — input/output token counts and API call metrics
+
+### Changed
+- README rewritten to lead with coding tutorial use case and MCP quick-start
+- Combined.md filters speech entries with >60% overlap against synthesis notes
+- LM dedup refactored from monolithic Gemini call to chunked 200-entry windows with overlap
+- Deprecated monolithic transcript pass removed (replaced by consensus pipeline in 0.5.0)
+
+### Fixed
+- Gemini responses with undefined `text` fields no longer crash transcript consensus (`toLowerCase` on undefined)
+- Remote URL handler resolves system yt-dlp binary explicitly — `ytdlp-nodejs` bundled binary unreliable in tsup bundle
+- MCP `analyze_video` threads `inputFilePath` for local file keyframe extraction
+- ffmpeg keyframe extraction uses `-y` flag to overwrite existing frames on re-runs
+- `getPeople` guards against malformed JSON missing `participants` key
+- `getLinks` catch narrowed to ENOENT only — non-file-not-found errors no longer silently swallowed
+- `tokenUsage` preserved through rename-speakers re-render (was silently dropped from metadata.json)
+- Consensus run constants shared between estimator and pipeline (eliminates drift risk)
+- Fractional seconds rounded in `vidistill list` and obsidian frontmatter duration display
+- Invalid `--format` values now rejected with error message instead of silently producing standard output
+- URL trailing punctuation stripping no longer removes `+` (fixes C++ reference URLs)
+- Union-find path compression in speaker reconciliation
+
 ## [0.7.0] - 2026-03-07
 
 ### Added
