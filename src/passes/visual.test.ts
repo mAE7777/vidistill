@@ -26,6 +26,7 @@ const VALID_RESULT: Pass2Result = {
   code_blocks: [],
   visual_notes: [],
   screen_timeline: [],
+  visual_regions: [],
 };
 
 describe('runVisual', () => {
@@ -40,6 +41,53 @@ describe('runVisual', () => {
     });
 
     expect(result).toEqual(VALID_RESULT);
+  });
+
+  it('preserves structured visual regions returned by Gemini', async () => {
+    const withRegion: Pass2Result = {
+      ...VALID_RESULT,
+      visual_regions: [
+        {
+          timestamp: '00:00:05',
+          region_type: 'chat',
+          label: 'Join the conversation',
+          bbox: { x: 0.67, y: 0.08, width: 0.29, height: 0.84 },
+          visible: true,
+          sample_text: 'message from attendee',
+          confidence: 0.95,
+        },
+      ],
+    };
+    const client = makeClient(withRegion);
+    const result = await runVisual({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      segment: SEGMENT,
+      model: 'gemini-2.5-flash',
+    });
+
+    expect(result.visual_regions).toEqual(withRegion.visual_regions);
+  });
+
+  it('normalizes missing optional arrays to empty arrays', async () => {
+    const client = makeClient({
+      segment_index: 0,
+      time_range: '00:00:00 - 00:01:00',
+      code_blocks: [],
+    });
+
+    const result = await runVisual({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      segment: SEGMENT,
+      model: 'gemini-2.5-flash',
+    });
+
+    expect(result.visual_notes).toEqual([]);
+    expect(result.screen_timeline).toEqual([]);
+    expect(result.visual_regions).toEqual([]);
   });
 
   it('throws when result is null', async () => {

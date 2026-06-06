@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { writeLinks, scanTranscriptForUrls } from './links.js';
+import { writeLinks, scanChatMessagesForUrls, scanTranscriptForUrls } from './links.js';
 import type { SegmentResult, ChatExtraction, Pass1Result } from '../types/index.js';
 
 function makeSegment(index: number, pass3c: ChatExtraction | null = null, pass1: Pass1Result | null = null): SegmentResult {
@@ -173,6 +173,47 @@ describe('writeLinks', () => {
     const seg = makeSegment(0, null, null);
     expect(writeLinks({ segments: [seg] })).toBeNull();
   });
+
+  it('extracts bare domains from chat messages into links.md', () => {
+    const pass3c: ChatExtraction = {
+      messages: [
+        {
+          timestamp: '00:00:15',
+          sender: 'Sophia',
+          text: 'Learn more here: techstars.com/accelerators/mentorship/members',
+        },
+      ],
+      links: [],
+    };
+    const seg = makeSegment(0, pass3c);
+
+    const result = writeLinks({ segments: [seg] });
+
+    expect(result).toContain('https://techstars.com/accelerators/mentorship/members');
+    expect(result).toContain('Visible chat message from Sophia');
+  });
+
+  it('deduplicates explicit pass3c links against bare chat message domains', () => {
+    const pass3c: ChatExtraction = {
+      messages: [
+        { timestamp: '00:00:15', sender: 'Sophia', text: 'techstars.com/accelerators/mentorship/members' },
+      ],
+      links: [
+        {
+          timestamp: '00:00:15',
+          url: 'https://techstars.com/accelerators/mentorship/members',
+          context: 'Confirmed by chat extraction',
+        },
+      ],
+    };
+    const seg = makeSegment(0, pass3c);
+
+    const result = writeLinks({ segments: [seg] });
+    const matches = (result ?? '').match(/techstars\.com\/accelerators\/mentorship\/members/g);
+
+    expect(matches).toHaveLength(1);
+    expect(result).toContain('Confirmed by chat extraction');
+  });
 });
 
 describe('scanTranscriptForUrls', () => {
@@ -197,6 +238,26 @@ describe('scanTranscriptForUrls', () => {
     expect(links[0].timestamp).toBe('00:01:00');
   });
 
+  it('extracts a bare domain from transcript text and adds https', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'see techstars.com/accelerators/mentorship/members for details' }]);
+    const seg = makeSegment(0, null, pass1);
+    const links = scanTranscriptForUrls([seg]);
+    expect(links).toHaveLength(1);
+    expect(links[0].url).toBe('https://techstars.com/accelerators/mentorship/members');
+  });
+
+  it('does not extract the domain part of an email address as a link', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'email me at founder@example.com' }]);
+    const seg = makeSegment(0, null, pass1);
+    expect(scanTranscriptForUrls([seg])).toHaveLength(0);
+  });
+
+  it('does not extract title-case sentence fragments as bare domains', () => {
+    const pass1 = makePass1([{ timestamp: '00:01:00', text: 'Fabulous Nutrition-cortex Bars.Gut health to support Brain Health' }]);
+    const seg = makeSegment(0, null, pass1);
+    expect(scanTranscriptForUrls([seg])).toHaveLength(0);
+  });
+
   it('strips trailing period from URL', () => {
     const pass1 = makePass1([{ timestamp: '00:01:00', text: 'go to https://example.com.' }]);
     const seg = makeSegment(0, null, pass1);
@@ -218,5 +279,26 @@ describe('scanTranscriptForUrls', () => {
     expect(links).toHaveLength(2);
     expect(links.map((l) => l.url)).toContain('https://foo.com');
     expect(links.map((l) => l.url)).toContain('https://bar.com');
+  });
+});
+
+describe('scanChatMessagesForUrls', () => {
+  it('extracts bare domains from chat messages', () => {
+    const seg = makeSegment(0, {
+      messages: [
+        { timestamp: '00:00:15', sender: 'Sophia', text: 'techstars.com/accelerators/mentorship/members' },
+      ],
+      links: [],
+    });
+
+    const links = scanChatMessagesForUrls([seg]);
+
+    expect(links).toEqual([
+      {
+        url: 'https://techstars.com/accelerators/mentorship/members',
+        context: 'Visible chat message from Sophia',
+        timestamp: '00:00:15',
+      },
+    ]);
   });
 });

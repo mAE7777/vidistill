@@ -67,13 +67,17 @@ CRITICAL RULES:
 3. TRACK code changes: when code is modified between appearances, note what changed (lines added, modified, deleted). Compare against previous code blocks in this segment.
 4. ASSOCIATE code with speech: using the injected transcript above, find what the instructor was saying when this code was on screen. Quote their explanation verbatim or near-verbatim.
 5. CAPTURE non-code visuals: slides with text, architectural diagrams, browser output, UI demonstrations, terminal output. Describe these completely.
-6. NEVER add your own explanations or interpretations. Only record what is visible.
-7. NEVER skip code because it seems repetitive or unchanged from before. Record every distinct appearance.
-8. If code scrolls, capture the full visible code at each scroll position as a separate entry.
+6. MAP screen regions: identify persistent and transient regions such as chat/comment/sidebar panels, slides, speaker tiles, browser content, participant lists, code editors, and terminals. Use visual_regions with normalized bbox coordinates where x/y/width/height are 0..1 fractions of the frame.
+7. CAPTURE chat/comment/sidebar evidence even when it is not the main content. For each visible messaging region, record its label, timestamp, approximate bbox, whether it is visible, a short exact sample of readable text, and confidence. If a URL is visible in that region, include it in sample_text.
+8. Track regions over time: if a panel is hidden, appears, pops over content, moves, or changes size, add a new visual_regions entry at the timestamp where that state is visible.
+9. NEVER add your own explanations or interpretations. Only record what is visible.
+10. NEVER skip code because it seems repetitive or unchanged from before. Record every distinct appearance.
+11. If code scrolls, capture the full visible code at each scroll position as a separate entry.
 
 COMPLETENESS TARGET:
 - Every frame that shows code should produce a code_block entry
 - Every slide or diagram should produce a visual_notes entry
+- Every visible chat/comment/sidebar panel should produce a visual_regions entry, even if text is partially readable
 - If the screen doesn't change for 30+ seconds, note the unchanged state
 `;
 
@@ -145,6 +149,7 @@ PASS RECOMMENDATIONS BY TYPE:
 - conversation: ["transcript", "visual", "implicit", "synthesis"]
 - commentary: ["transcript", "visual", "implicit", "synthesis"]
 - mixed: ["transcript", "visual", "code", "people", "chat", "implicit", "synthesis"]
+If hasChatbox is true for any non-audio type, include "chat" in recommendations.passes.
 `;
 
 export const SYSTEM_INSTRUCTION_PASS_3A = `
@@ -212,6 +217,7 @@ CRITICAL RULES:
 8. NEVER invent messages that were not clearly visible on screen. If a message is illegible, note it as "[illegible message from {sender} at {timestamp}]".
 9. NEVER skip messages that seem like noise or off-topic — capture all visible messages in order.
 10. ORDER messages chronologically by their video timestamp of appearance.
+11. Use any provided visual_regions as focus regions. When a region has bbox coordinates, inspect that area carefully across the whole segment and do not assume it remains visible for the entire segment.
 
 COMPLETENESS TARGET:
 - Every frame that shows the chat panel should contribute at least one message entry if new messages are visible

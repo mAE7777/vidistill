@@ -36,6 +36,7 @@ afterEach(() => vi.resetAllMocks());
 function makePass2(
   screenTimeline: { timestamp: string; screen_state: string }[],
   visualNotes: { timestamp: string; visual_type: string; description: string }[] = [],
+  visualRegions: Pass2Result['visual_regions'] = [],
 ): Pass2Result {
   return {
     segment_index: 0,
@@ -43,6 +44,7 @@ function makePass2(
     code_blocks: [],
     visual_notes: visualNotes,
     screen_timeline: screenTimeline,
+    visual_regions: visualRegions,
   };
 }
 
@@ -352,6 +354,38 @@ describe('frame description', () => {
       'Architecture diagram',
       'Whiteboard sketch',
     ]);
+  });
+
+  it('collects visible chat sidebar regions as keyframes', async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockMkdirSync.mockImplementation(() => undefined);
+    mockExecFileSync.mockImplementation(() => Buffer.from(''));
+
+    const pass2 = makePass2(
+      [],
+      [],
+      [
+        {
+          timestamp: '00:05:05',
+          region_type: 'chat',
+          label: 'Join the conversation',
+          bbox: { x: 0.67, y: 0.08, width: 0.29, height: 0.84 },
+          visible: true,
+          sample_text: 'techstars.com/accelerators/permanente-medicine',
+          confidence: 0.95,
+        },
+      ],
+    );
+
+    const result = await extractKeyframes({
+      filePath: '/video.mp4',
+      pass2Results: [pass2],
+      outputDir: '/out',
+    });
+
+    expect(result.frames).toHaveLength(1);
+    expect(result.frames[0].timestamp).toBe('00:05:05');
+    expect(result.frames[0].description).toBe('Join the conversation: techstars.com/accelerators/permanente-medicine');
   });
 });
 

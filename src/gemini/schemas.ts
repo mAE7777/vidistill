@@ -226,6 +226,35 @@ export const SCHEMA_PASS_2: Schema = {
           screen_state: { type: Type.STRING }
         }
       }
+    },
+    visual_regions: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          timestamp: { type: Type.STRING, description: "HH:MM:SS when this region state is visible" },
+          region_type: {
+            type: Type.STRING,
+            enum: ["chat", "comment_panel", "sidebar", "slide", "video", "speaker_tile", "browser", "code", "terminal", "participant_list", "other"],
+            description: "Kind of visible screen region"
+          },
+          label: { type: Type.STRING, description: "Visible title or short region label, e.g. Join the conversation" },
+          bbox: {
+            type: Type.OBJECT,
+            properties: {
+              x: { type: Type.NUMBER, description: "Normalized left edge, 0..1" },
+              y: { type: Type.NUMBER, description: "Normalized top edge, 0..1" },
+              width: { type: Type.NUMBER, description: "Normalized width, 0..1" },
+              height: { type: Type.NUMBER, description: "Normalized height, 0..1" }
+            },
+            required: ["x", "y", "width", "height"]
+          },
+          visible: { type: Type.BOOLEAN, description: "Whether this region is visible at timestamp" },
+          sample_text: { type: Type.STRING, description: "Short exact readable sample from the region, including URLs when visible" },
+          confidence: { type: Type.NUMBER, description: "0..1 confidence that the region type and sample are correct" }
+        },
+        required: ["timestamp", "region_type", "label", "visible", "sample_text", "confidence"]
+      }
     }
   },
   required: ["segment_index", "time_range", "code_blocks"]

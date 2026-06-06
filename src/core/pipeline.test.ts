@@ -424,6 +424,54 @@ describe('runPipeline', () => {
     }
   });
 
+  it('runs chat extraction late when pass2 detects a chat sidebar even if strategy omitted chat', async () => {
+    const noSpecialistStrategy: PassStrategy = {
+      passes: ['transcript', 'visual'],
+      resolution: 'medium',
+      segmentMinutes: 10,
+    };
+    mockDetermineStrategy.mockReturnValue(noSpecialistStrategy);
+
+    mockRunVisual.mockResolvedValueOnce(makePass2(0));
+    mockRunVisual.mockResolvedValueOnce({
+      ...makePass2(1),
+      visual_notes: [
+        {
+          timestamp: '00:05:05',
+          visual_type: 'other',
+          description: 'Right sidebar labeled Join the conversation shows chat messages from attendees',
+        },
+      ],
+      visual_regions: [
+        {
+          timestamp: '00:05:05',
+          region_type: 'chat',
+          label: 'Join the conversation',
+          visible: true,
+          sample_text: 'Audience question about Permanente Medicine',
+          confidence: 0.95,
+        },
+      ],
+    });
+    mockRunVisual.mockResolvedValueOnce(makePass2(2));
+    mockRunLinkConsensus.mockResolvedValueOnce(makeLinkConsensusResult({
+      merged: {
+        messages: [{ timestamp: '00:05:05', sender: 'Audience', text: 'Question about the program' }],
+        links: [{ timestamp: '00:05:05', url: 'https://techstars.com/accelerators/permanente-medicine', context: 'Visible in sidebar' }],
+      },
+    }));
+
+    const promise = runPipeline(baseConfig());
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(mockRunLinkConsensus).toHaveBeenCalledTimes(1);
+    expect(result.passesRun).toContain('pass3c');
+    expect(result.segments[0].pass3c).toBeUndefined();
+    expect(result.segments[1].pass3c?.links[0].url).toBe('https://techstars.com/accelerators/permanente-medicine');
+    expect(result.segments[2].pass3c).toBeUndefined();
+  });
+
   it('sets pass1 to null and runs pass2 with undefined transcript when transcription consensus fails for segment 1', async () => {
     const noSpecialistStrategy: PassStrategy = {
       passes: ['transcript', 'visual'],

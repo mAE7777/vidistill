@@ -8,8 +8,26 @@ interface CategorizedLink extends ExtractedLink {
   category: string;
 }
 
-const URL_REGEX = /https?:\/\/[^\s)<>"\\]+/g;
+const URL_OR_DOMAIN_REGEX = /(?:https?:\/\/|www\.)[^\s)<>"\\]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s)<>"\\]*)?/gi;
 const TRAILING_PUNCT = /[.,;:!?)]+$/;
+const COMMON_BARE_DOMAIN_TLDS = new Set([
+  'ai',
+  'app',
+  'co',
+  'com',
+  'dev',
+  'edu',
+  'gov',
+  'io',
+  'ly',
+  'me',
+  'net',
+  'org',
+  'studio',
+  'tv',
+  'uk',
+  'us',
+]);
 
 const CATEGORY_PATTERNS: Array<{ pattern: RegExp; category: string }> = [
   { pattern: /github\.com/i, category: 'GitHub' },
@@ -31,16 +49,61 @@ function categorizeUrl(url: string): string {
   return DEFAULT_CATEGORY;
 }
 
+function normalizeOutputUrl(url: string): string {
+  const trimmed = url.replace(TRAILING_PUNCT, '');
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function dedupeKey(url: string): string {
+  return url
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/$/, '');
+}
+
+function extractUrlsFromText(text: string): string[] {
+  const urls: string[] = [];
+  for (const match of text.matchAll(URL_OR_DOMAIN_REGEX)) {
+    const raw = match[0];
+    const prev = match.index != null && match.index > 0 ? text[match.index - 1] : '';
+    const hasProtocolOrWww = /^(https?:\/\/|www\.)/i.test(raw);
+    if (!hasProtocolOrWww && prev === '@') continue;
+    if (!hasProtocolOrWww) {
+      const host = raw.split('/')[0].toLowerCase();
+      const tld = host.split('.').pop() ?? '';
+      if (!COMMON_BARE_DOMAIN_TLDS.has(tld)) continue;
+    }
+    urls.push(normalizeOutputUrl(raw));
+  }
+  return urls;
+}
+
 export function scanTranscriptForUrls(segments: SegmentResult[]): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   for (const seg of segments) {
     if (seg.pass1 == null) continue;
     for (const entry of seg.pass1.transcript_entries) {
-      const matches = entry.text.match(URL_REGEX);
-      if (matches == null) continue;
-      for (const raw of matches) {
-        const url = raw.replace(TRAILING_PUNCT, '');
+      for (const url of extractUrlsFromText(entry.text)) {
         links.push({ url, context: '', timestamp: entry.timestamp });
+      }
+    }
+  }
+  return links;
+}
+
+export function scanChatMessagesForUrls(segments: SegmentResult[]): ExtractedLink[] {
+  const links: ExtractedLink[] = [];
+  for (const seg of segments) {
+    if (seg.pass3c == null) continue;
+    for (const message of seg.pass3c.messages ?? []) {
+      for (const url of extractUrlsFromText(message.text)) {
+        links.push({
+          url,
+          context: `Visible chat message from ${message.sender}`,
+          timestamp: message.timestamp,
+        });
       }
     }
   }
@@ -51,7 +114,7 @@ function collectAllLinks(segments: SegmentResult[]): ExtractedLink[] {
   const links: ExtractedLink[] = [];
   for (const seg of segments) {
     if (seg.pass3c != null) {
-      links.push(...seg.pass3c.links);
+      links.push(...seg.pass3c.links.map((link) => ({ ...link, url: normalizeOutputUrl(link.url) })));
     }
   }
   return links;
@@ -60,8 +123,9 @@ function collectAllLinks(segments: SegmentResult[]): ExtractedLink[] {
 function deduplicateLinks(links: ExtractedLink[]): ExtractedLink[] {
   const seen = new Set<string>();
   return links.filter((l) => {
-    if (seen.has(l.url)) return false;
-    seen.add(l.url);
+    const key = dedupeKey(l.url);
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -80,7 +144,7 @@ export function writeLinks(params: WriteLinksParams): string | null {
   const { segments } = params;
 
   // pass3c links first (they have context), then transcript-scanned links as fallback
-  const rawLinks = [...collectAllLinks(segments), ...scanTranscriptForUrls(segments)];
+  const rawLinks = [...collectAllLinks(segments), ...scanChatMessagesForUrls(segments), ...scanTranscriptForUrls(segments)];
   if (rawLinks.length === 0) return null;
 
   const deduped = deduplicateLinks(rawLinks);

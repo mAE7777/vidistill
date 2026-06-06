@@ -2,7 +2,7 @@ import { log, cancel, note, confirm } from '@clack/prompts';
 import pc from 'picocolors';
 import { basename, extname, resolve, join } from 'path';
 import { existsSync, openSync, readSync, closeSync } from 'fs';
-import { readdir, rm, writeFile } from 'fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'fs/promises';
 import { showConfigBox } from '../cli/ui.js';
 import { promptVideoSource, promptContext, promptOutputName, promptConfirmation } from '../cli/prompts.js';
 import { resolveApiKey } from '../cli/config.js';
@@ -12,15 +12,19 @@ import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
 import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
 import { handleLocalFile } from '../input/local-file.js';
-import { handleRemoteUrl } from '../input/remote.js';
+import { handleRemoteUrl, downloadRemote } from '../input/remote.js';
+import { tryUnlink } from '../input/local-file.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
+import { runClipPipeline } from '../core/clip-pipeline.js';
+import { shouldSplitIntoClips, createClipPlan, splitVideo, cleanupClips } from '../core/splitter.js';
+import { uploadClips } from '../core/clip-uploader.js';
 import { generateOutput, slugify } from '../output/generator.js';
 import { createShutdownHandler } from '../core/shutdown.js';
 import { MODELS } from '../gemini/models.js';
 import { parseBatchFile, generateBatchIndex } from '../core/batch.js';
 import type { BatchResultItem } from '../core/batch.js';
-import { estimateApiCalls } from '../core/estimator.js';
+import { estimateApiCalls, estimateClipApiCalls } from '../core/estimator.js';
 import type { VideoProfile, PassStrategy } from '../types/index.js';
 
 /**
@@ -96,14 +100,17 @@ async function processSingleItem(
   const resolved = resolveInput(rawInput);
   const client = new GeminiClient(apiKey);
 
-  let fileUri: string;
-  let mimeType: string;
+  let fileUri: string | undefined;
+  let mimeType: string = 'video/mp4';
   let duration: number;
   let resolvedTitle: string;
   let uploadedFileNames: string[] = [];
   let ytAuthor: string | undefined;
+  let localFilePath: string | undefined;  // path to a local file (for splitting or keyframes)
+  let tempDownloadPath: string | undefined; // temp file from remote download that we must clean up
 
   if (resolved.type === 'youtube') {
+    // YouTube: Gemini accepts URL directly — no splitting possible
     const result = await handleYouTube(resolved.value, client);
     fileUri = result.fileUri;
     mimeType = result.mimeType;
@@ -127,32 +134,48 @@ async function processSingleItem(
       resolvedTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
     }
   } else if (resolved.type === 'remote') {
-    const result = await handleRemoteUrl(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
+    // Remote: download first, then decide whether to split or upload whole
+    const dl = await downloadRemote(resolved.value);
+    tempDownloadPath = dl.filePath;
+    localFilePath = dl.filePath;
+    resolvedTitle = dl.title;
     try {
       duration = await detectDuration({
-        geminiDuration: result.duration,
+        filePath: dl.filePath,
+        ytDlpDuration: dl.duration,
       });
     } catch {
-      duration = result.duration ?? 600;
+      duration = dl.duration ?? 600;
     }
-    if (result.uploadedFileName != null) {
-      uploadedFileNames = [result.uploadedFileName];
-    }
-    resolvedTitle = result.title;
   } else {
-    const result = await handleLocalFile(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
-    duration = await detectDuration({
-      filePath: resolved.value,
-      geminiDuration: result.duration,
-    });
-    if (result.uploadedFileName != null) {
-      uploadedFileNames = [result.uploadedFileName];
-    }
+    // Local file
+    localFilePath = resolved.value;
+    duration = await detectDuration({ filePath: resolved.value });
     resolvedTitle = basename(resolved.value, extname(resolved.value));
+  }
+
+  const useClipPipeline = localFilePath != null && shouldSplitIntoClips(duration);
+
+  // If not splitting, upload the file now (for remote/local that didn't go through clip path)
+  if (!useClipPipeline && fileUri == null && localFilePath != null) {
+    try {
+      const result = await handleLocalFile(localFilePath, client);
+      fileUri = result.fileUri;
+      mimeType = result.mimeType;
+      if (result.uploadedFileName != null) {
+        uploadedFileNames = [result.uploadedFileName];
+      }
+      // Refine duration from Gemini metadata if available
+      if (result.duration != null) {
+        duration = result.duration;
+      }
+    } finally {
+      // Clean up temp download if we uploaded the whole file
+      if (tempDownloadPath != null) {
+        tryUnlink(tempDownloadPath);
+        tempDownloadPath = undefined;
+      }
+    }
   }
 
   const finalTitle = videoTitle ?? resolvedTitle;
@@ -179,30 +202,77 @@ async function processSingleItem(
   const progress = createProgressDisplay();
 
   const startTime = Date.now();
-  const pipelineResult = await runPipeline({
-    client,
-    fileUri,
-    mimeType,
-    duration,
-    model,
-    context,
-    lang,
-    channelAuthor: ytAuthor,
-    rateLimiter,
-    onProgress: (status) => {
-      progress.update(status);
-      if (status.currentStep != null && status.totalSteps != null) {
-        shutdownHandler.setProgress(status.currentStep, status.totalSteps);
-      }
-    },
-    onWait: (delayMs) => progress.onWait(delayMs),
-    isShuttingDown: () => shutdownHandler.isShuttingDown(),
-    quick,
-  });
+  let pipelineResult;
+
+  if (useClipPipeline && localFilePath != null) {
+    // ── Clip pipeline: split → upload → parallel process → combine ──────
+    const clipPlan = createClipPlan(duration);
+    log.info(`Splitting ${Math.round(duration / 60)}min video into ${clipPlan.length} clips for parallel processing`);
+
+    const clipInfos = await splitVideo(localFilePath, clipPlan);
+
+    // Clean up temp download now that we've split it
+    if (tempDownloadPath != null) {
+      tryUnlink(tempDownloadPath);
+      tempDownloadPath = undefined;
+    }
+
+    try {
+      log.info(`Uploading ${clipInfos.length} clips...`);
+      const uploadedClips = await uploadClips(client, clipInfos, uploadedFileNames);
+
+      pipelineResult = await runClipPipeline({
+        client,
+        clips: uploadedClips,
+        totalDuration: duration,
+        model,
+        rateLimiter,
+        context,
+        lang,
+        channelAuthor: ytAuthor,
+        quick,
+        onProgress: (status) => {
+          progress.update(status);
+        },
+        onWait: (delayMs) => progress.onWait(delayMs),
+        isShuttingDown: () => shutdownHandler.isShuttingDown(),
+      });
+    } finally {
+      cleanupClips(clipInfos);
+    }
+  } else {
+    // ── Standard pipeline: single file ──────────────────────────────────
+    pipelineResult = await runPipeline({
+      client,
+      fileUri: fileUri!,
+      mimeType,
+      duration,
+      model,
+      context,
+      lang,
+      channelAuthor: ytAuthor,
+      rateLimiter,
+      onProgress: (status) => {
+        progress.update(status);
+        if (status.currentStep != null && status.totalSteps != null) {
+          shutdownHandler.setProgress(status.currentStep, status.totalSteps);
+        }
+      },
+      onWait: (delayMs) => progress.onWait(delayMs),
+      isShuttingDown: () => shutdownHandler.isShuttingDown(),
+      quick,
+    });
+  }
+
   const elapsedMs = Date.now() - startTime;
 
   shutdownHandler.deregister();
   progress.complete(pipelineResult, elapsedMs);
+
+  // Clean up temp download if still around
+  if (tempDownloadPath != null) {
+    tryUnlink(tempDownloadPath);
+  }
 
   await generateOutput({
     pipelineResult,
@@ -279,6 +349,7 @@ async function runBatchMode(args: DistillArgs, apiKey: string): Promise<void> {
   const batchResult = { items: resultItems };
   const indexContent = generateBatchIndex(batchResult, outputDir);
   const indexPath = join(outputDir, 'index.md');
+  await mkdir(outputDir, { recursive: true });
   await writeFile(indexPath, indexContent, 'utf-8');
 
   const successCount = resultItems.filter((r) => r.success).length;
@@ -301,11 +372,14 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   // Step 4: Resolve context (prompt unless --context flag provided)
   let context = args.context ?? (await promptContext());
 
-  // Step 4b: Optional output folder name
-  let outputName: string | undefined = await promptOutputName();
-
   // Step 5: Display configuration and confirm (skip when all inputs provided via CLI flags)
   const allFlagsProvided = args.input != null && args.context != null;
+
+  // Step 4b: Optional output folder name (skip in non-interactive mode)
+  let outputName: string | undefined;
+  if (!allFlagsProvided) {
+    outputName = await promptOutputName();
+  }
 
   if (!allFlagsProvided) {
     let confirmed = false;
@@ -342,16 +416,18 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     }
   }
 
-  // Step 6: Parse and route the input, capturing fileUri + mimeType for the pipeline
+  // Step 6: Parse and route the input
   const resolved = resolveInput(rawInput);
   const client = new GeminiClient(apiKey);
 
-  let fileUri: string;
-  let mimeType: string;
+  let fileUri: string | undefined;
+  let mimeType: string = 'video/mp4';
   let duration: number;
   let videoTitle: string;
   let uploadedFileNames: string[] = [];
   let ytAuthor: string | undefined;
+  let localFilePath: string | undefined;
+  let tempDownloadPath: string | undefined;
 
   if (resolved.type === 'youtube') {
     const result = await handleYouTube(resolved.value, client);
@@ -369,7 +445,6 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     if (result.uploadedFileName != null) {
       uploadedFileNames = [result.uploadedFileName];
     }
-    // Fetch real title and author from YouTube
     try {
       const meta = await fetchYouTubeMetadata(resolved.value);
       videoTitle = meta.title;
@@ -379,36 +454,46 @@ export async function runDistill(args: DistillArgs): Promise<void> {
       videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
     }
   } else if (resolved.type === 'remote') {
-    const result = await handleRemoteUrl(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
+    const dl = await downloadRemote(resolved.value);
+    tempDownloadPath = dl.filePath;
+    localFilePath = dl.filePath;
+    videoTitle = dl.title;
     try {
       duration = await detectDuration({
-        geminiDuration: result.duration,
+        filePath: dl.filePath,
+        ytDlpDuration: dl.duration,
       });
     } catch {
-      duration = result.duration ?? 600;
+      duration = dl.duration ?? 600;
     }
-    if (result.uploadedFileName != null) {
-      uploadedFileNames = [result.uploadedFileName];
-    }
-    videoTitle = result.title;
   } else {
-    const result = await handleLocalFile(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
-    duration = await detectDuration({
-      filePath: resolved.value,
-      geminiDuration: result.duration,
-    });
-    if (result.uploadedFileName != null) {
-      uploadedFileNames = [result.uploadedFileName];
-    }
-    // Derive title from local filename (without extension)
+    localFilePath = resolved.value;
+    duration = await detectDuration({ filePath: resolved.value });
     videoTitle = basename(resolved.value, extname(resolved.value));
   }
 
-  // Use user-provided output name if given
+  const useClipPipeline = localFilePath != null && shouldSplitIntoClips(duration);
+
+  // If not splitting, upload local/remote file now
+  if (!useClipPipeline && fileUri == null && localFilePath != null) {
+    try {
+      const result = await handleLocalFile(localFilePath, client);
+      fileUri = result.fileUri;
+      mimeType = result.mimeType;
+      if (result.uploadedFileName != null) {
+        uploadedFileNames = [result.uploadedFileName];
+      }
+      if (result.duration != null) {
+        duration = result.duration;
+      }
+    } finally {
+      if (tempDownloadPath != null) {
+        tryUnlink(tempDownloadPath);
+        tempDownloadPath = undefined;
+      }
+    }
+  }
+
   if (outputName != null) {
     videoTitle = outputName;
   }
@@ -418,12 +503,10 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   const slug = slugify(videoTitle);
   const finalOutputDir = `${outputDir}/${slug}`;
 
-  // Clear any stale output from a previous run
   if (existsSync(finalOutputDir)) {
     await clearDirectory(finalOutputDir);
   }
 
-  // Step 7: Create shutdown handler and register it before pipeline
   const shutdownHandler = createShutdownHandler({
     client,
     uploadedFileNames,
@@ -435,7 +518,6 @@ export async function runDistill(args: DistillArgs): Promise<void> {
   });
   shutdownHandler.register();
 
-  // Step 8: Create rate limiter and progress display
   const rateLimiter = new RateLimiter();
   const progress = createProgressDisplay();
 
@@ -443,51 +525,93 @@ export async function runDistill(args: DistillArgs): Promise<void> {
     log.info('Quick mode: consensus skipped, ~60% fewer API calls');
   }
 
-  // Step 9: Run the pipeline (Pass 0 + segmentation + passes happen internally)
   const startTime = Date.now();
-  const pipelineResult = await runPipeline({
-    client,
-    fileUri,
-    mimeType,
-    duration,
-    model,
-    context,
-    lang: args.lang,
-    channelAuthor: ytAuthor,
-    rateLimiter,
-    quick: args.quick,
-    onProgress: (status) => {
-      progress.update(status);
-      if (status.currentStep != null && status.totalSteps != null) {
-        shutdownHandler.setProgress(status.currentStep, status.totalSteps);
-      }
-    },
-    onWait: (delayMs) => progress.onWait(delayMs),
-    isShuttingDown: () => shutdownHandler.isShuttingDown(),
-    onPass0Complete: async (profile: VideoProfile, strategy: PassStrategy, segmentCount: number) => {
-      const estimate = estimateApiCalls(strategy, segmentCount);
-      const [minMin, maxMin] = estimate.estimatedMinutes;
-      const minRounded = Math.round(minMin);
-      const maxRounded = Math.round(maxMin);
-      note(`~${estimate.totalCalls} API calls • est. ${minRounded}-${maxRounded} min`, 'Cost estimate');
-      const shouldProceed = await confirm({ message: 'Proceed?' });
-      return shouldProceed === true;
-    },
-  });
+  let pipelineResult;
+
+  if (useClipPipeline && localFilePath != null) {
+    // ── Clip pipeline ───────────────────────────────────────────────────
+    const clipPlan = createClipPlan(duration);
+    log.info(`Splitting ${Math.round(duration / 60)}min video into ${clipPlan.length} clips for parallel processing`);
+
+    const clipInfos = await splitVideo(localFilePath, clipPlan);
+
+    if (tempDownloadPath != null) {
+      tryUnlink(tempDownloadPath);
+      tempDownloadPath = undefined;
+    }
+
+    try {
+      log.info(`Uploading ${clipInfos.length} clips...`);
+      const uploadedClips = await uploadClips(client, clipInfos, uploadedFileNames);
+
+      pipelineResult = await runClipPipeline({
+        client,
+        clips: uploadedClips,
+        totalDuration: duration,
+        model,
+        rateLimiter,
+        context,
+        lang: args.lang,
+        channelAuthor: ytAuthor,
+        quick: args.quick,
+        onProgress: (status) => progress.update(status),
+        onWait: (delayMs) => progress.onWait(delayMs),
+        isShuttingDown: () => shutdownHandler.isShuttingDown(),
+        onPass0Complete: async (profile: VideoProfile, strategy: PassStrategy, clipCount: number) => {
+          const estimate = estimateClipApiCalls(strategy, clipCount);
+          const [minMin, maxMin] = estimate.estimatedMinutes;
+          note(`~${estimate.totalCalls} API calls (${clipCount} clips) • est. ${Math.round(minMin)}-${Math.round(maxMin)} min`, 'Cost estimate');
+          const shouldProceed = await confirm({ message: 'Proceed?' });
+          return shouldProceed === true;
+        },
+      });
+    } finally {
+      cleanupClips(clipInfos);
+    }
+  } else {
+    // ── Standard pipeline ───────────���───────────────────────────────────
+    pipelineResult = await runPipeline({
+      client,
+      fileUri: fileUri!,
+      mimeType,
+      duration,
+      model,
+      context,
+      lang: args.lang,
+      channelAuthor: ytAuthor,
+      rateLimiter,
+      quick: args.quick,
+      onProgress: (status) => {
+        progress.update(status);
+        if (status.currentStep != null && status.totalSteps != null) {
+          shutdownHandler.setProgress(status.currentStep, status.totalSteps);
+        }
+      },
+      onWait: (delayMs) => progress.onWait(delayMs),
+      isShuttingDown: () => shutdownHandler.isShuttingDown(),
+      onPass0Complete: async (profile: VideoProfile, strategy: PassStrategy, segmentCount: number) => {
+        const estimate = estimateApiCalls(strategy, segmentCount);
+        const [minMin, maxMin] = estimate.estimatedMinutes;
+        note(`~${estimate.totalCalls} API calls • est. ${Math.round(minMin)}-${Math.round(maxMin)} min`, 'Cost estimate');
+        const shouldProceed = await confirm({ message: 'Proceed?' });
+        return shouldProceed === true;
+      },
+    });
+  }
+
   const elapsedMs = Date.now() - startTime;
 
-  // Step 10: Deregister shutdown handler (pipeline complete)
   shutdownHandler.deregister();
-
-  // Step 11: Pipeline complete
   progress.complete(pipelineResult, elapsedMs);
 
-  // If interrupted, shutdown handler already displayed the message — skip completion output
+  if (tempDownloadPath != null) {
+    tryUnlink(tempDownloadPath);
+  }
+
   if (pipelineResult.interrupted != null) {
     return;
   }
 
-  // Step 12: Generate output files
   const outputResult = await generateOutput({
     pipelineResult,
     outputDir,

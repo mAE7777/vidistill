@@ -366,6 +366,33 @@ describe('generateOutput', () => {
     const callArgs = (writeTranscript as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(callArgs.speakerMapping).toMatchObject(mapping);
   });
+
+  it('records quality warning when pass2 sees chat but pass3c did not run', async () => {
+    const pipelineResult: PipelineResult = {
+      segments: [
+        {
+          index: 0,
+          pass1: null,
+          pass2: {
+            segment_index: 0,
+            time_range: '00:00:00 - 00:10:00',
+            code_blocks: [],
+            visual_notes: [
+              { timestamp: '00:05:05', visual_type: 'other', description: 'Right sidebar shows Join the conversation chat messages' },
+            ],
+            screen_timeline: [],
+          },
+        },
+      ],
+      passesRun: ['pass2'],
+      errors: [],
+      apiCallCount: 0,
+    };
+
+    await generateOutput(makeParams({ pipelineResult }));
+
+    expect(pipelineResult.errors).toContain('quality: pass2 detected chat/sidebar content in segment(s) 0, but chat extraction did not run');
+  });
 });
 
 // ---------------------------------------------------------------------------

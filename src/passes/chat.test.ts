@@ -18,6 +18,17 @@ const VALID_PASS2: Pass2Result = {
   visual_notes: [
     { timestamp: '00:00:05', visual_type: 'other', description: 'Chat panel showing messages from attendees' },
   ],
+  visual_regions: [
+    {
+      timestamp: '00:00:05',
+      region_type: 'chat',
+      label: 'Join the conversation',
+      bbox: { x: 0.68, y: 0.1, width: 0.28, height: 0.8 },
+      visible: true,
+      sample_text: 'Alice: Hello everyone!',
+      confidence: 0.96,
+    },
+  ],
   screen_timeline: [],
 };
 
@@ -130,6 +141,25 @@ describe('runChatExtraction', () => {
     const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const textPart = call.contents[0].parts[1].text as string;
     expect(textPart).toContain('[00:00:05] other: Chat panel showing messages from attendees');
+  });
+
+  it('injects pass2 visual_regions as focus regions into prompt text', async () => {
+    const client = makeClient(VALID_RESULT);
+    await runChatExtraction({
+      client,
+      fileUri: 'files/abc123',
+      mimeType: 'video/mp4',
+      segment: SEGMENT,
+      model: 'gemini-2.5-flash',
+      pass2Result: VALID_PASS2,
+    });
+
+    const call = (client.generate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const textPart = call.contents[0].parts[1].text as string;
+    expect(textPart).toContain('DETECTED VISUAL REGIONS FROM THIS SEGMENT');
+    expect(textPart).toContain('[00:00:05] chat: Join the conversation');
+    expect(textPart).toContain('FOCUS_CHAT_REGION');
+    expect(textPart).toContain('sample: Alice: Hello everyone!');
   });
 
   it('includes videoMetadata with correct offsets in contents', async () => {

@@ -173,7 +173,7 @@ Supported formats: MP4, MOV, WebM, MKV, AVI, MPEG, FLV, WMV, 3GPP (video) and MP
 5. **Synthesis** — cross-references all passes into unified analysis
 6. **Output** — structured markdown and source files
 
-Long videos are segmented automatically. Failed passes are skipped gracefully. In interactive mode, a cost estimate is shown before processing and a quality summary (coverage, consensus rate, tokens) is displayed after.
+Long videos are segmented automatically — local files and downloaded URLs over 25 minutes are split into 20-minute clips and processed in parallel, with timestamps mapped back to the original timeline. Failed passes are skipped gracefully. In interactive mode, a cost estimate is shown before processing and a quality summary (coverage, consensus rate, tokens) is displayed after.
 
 ## License
 

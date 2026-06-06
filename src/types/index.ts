@@ -71,12 +71,47 @@ export interface ScreenState {
   screen_state: string;
 }
 
+export type VisualRegionType =
+  | 'chat'
+  | 'comment_panel'
+  | 'sidebar'
+  | 'slide'
+  | 'video'
+  | 'speaker_tile'
+  | 'browser'
+  | 'code'
+  | 'terminal'
+  | 'participant_list'
+  | 'other';
+
+export interface VisualRegionBBox {
+  /** Normalized left edge from 0 to 1. */
+  x: number;
+  /** Normalized top edge from 0 to 1. */
+  y: number;
+  /** Normalized width from 0 to 1. */
+  width: number;
+  /** Normalized height from 0 to 1. */
+  height: number;
+}
+
+export interface VisualRegion {
+  timestamp: string;
+  region_type: VisualRegionType;
+  label: string;
+  bbox?: VisualRegionBBox;
+  visible: boolean;
+  sample_text: string;
+  confidence: number;
+}
+
 export interface Pass2Result {
   segment_index: number;
   time_range: string;
   code_blocks: CodeBlock[];
   visual_notes: VisualNote[];
   screen_timeline: ScreenState[];
+  visual_regions?: VisualRegion[];
 }
 
 // Meeting Notes types

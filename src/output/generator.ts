@@ -17,6 +17,7 @@ import type {
   TokenUsage,
 } from '../types/index.js';
 import { extractKeyframes } from '../core/keyframes.js';
+import { normalizePipelineTimestamps } from '../core/timestamps.js';
 import { writeGuide } from './guide.js';
 import { writeTranscript } from './transcript.js';
 import { writeCombined } from './combined.js';
@@ -30,6 +31,7 @@ import { writeMetadata, writeRawOutput } from './metadata.js';
 import { addYamlFrontmatter, addWikilinks } from './obsidian.js';
 import type { ObsidianMetadata } from './obsidian.js';
 import { readJsonFile, buildExpandedMapping } from '../lib/utils.js';
+import { pass2HasChatCandidate } from '../core/visual-signals.js';
 
 /**
  * Convert a video title into a filesystem-safe slug:
@@ -77,6 +79,45 @@ function resolveFilesToGenerate(params: GenerateOutputParams): Set<string> {
   return optional;
 }
 
+function collectQualityWarnings(pipelineResult: PipelineResult): string[] {
+  const warnings: string[] = [];
+  const hasPass3c = pipelineResult.segments.some((s) => s.pass3c != null);
+  const visibleChatSegments = pipelineResult.segments
+    .filter((s) => pass2HasChatCandidate(s.pass2))
+    .map((s) => s.index);
+
+  if (pipelineResult.videoProfile?.visualContent.hasChatbox === true && !hasPass3c) {
+    warnings.push('quality: pass0 detected a chatbox, but chat extraction did not run');
+  }
+
+  if (pipelineResult.videoProfile?.visualContent.hasChatbox === true && hasPass3c) {
+    const allChatOutputsEmpty = pipelineResult.segments
+      .filter((s) => s.pass3c != null)
+      .every((s) => (s.pass3c?.messages.length ?? 0) === 0 && (s.pass3c?.links.length ?? 0) === 0);
+    if (allChatOutputsEmpty) {
+      warnings.push('quality: pass0 detected a chatbox, but chat extraction returned no messages or links');
+    }
+  }
+
+  if (visibleChatSegments.length > 0 && !hasPass3c) {
+    warnings.push(`quality: pass2 detected chat/sidebar content in segment(s) ${visibleChatSegments.join(', ')}, but chat extraction did not run`);
+  }
+
+  if (visibleChatSegments.length > 0 && hasPass3c) {
+    const chatOutputsForVisibleSegments = pipelineResult.segments.filter(
+      (s) => pass2HasChatCandidate(s.pass2) && s.pass3c != null,
+    );
+    const allEmpty = chatOutputsForVisibleSegments.length > 0 && chatOutputsForVisibleSegments.every(
+      (s) => (s.pass3c?.messages.length ?? 0) === 0 && (s.pass3c?.links.length ?? 0) === 0,
+    );
+    if (allEmpty) {
+      warnings.push(`quality: pass2 detected chat/sidebar content in segment(s) ${visibleChatSegments.join(', ')}, but chat extraction returned no messages or links`);
+    }
+  }
+
+  return warnings;
+}
+
 export async function generateOutput(params: GenerateOutputParams): Promise<OutputResult> {
   const { pipelineResult, outputDir, videoTitle, source, duration, model, processingTimeMs, channelAuthor, speakerMapping, declinedMerges, inputFilePath, format } = params;
   let { keyframes } = params;
@@ -89,6 +130,14 @@ export async function generateOutput(params: GenerateOutputParams): Promise<Outp
 
   const filesGenerated: string[] = [];
   const errors: string[] = [];
+
+  normalizePipelineTimestamps(pipelineResult, duration);
+
+  for (const warning of collectQualityWarnings(pipelineResult)) {
+    if (!pipelineResult.errors.includes(warning)) {
+      pipelineResult.errors.push(warning);
+    }
+  }
 
   // Step 1b: Keyframe extraction — only when inputFilePath is provided and keyframes not pre-supplied
   if (inputFilePath != null && keyframes == null) {
@@ -401,6 +450,8 @@ export async function reRenderWithSpeakerMapping(params: ReRenderWithSpeakerMapp
     ...(metadata?.consensusAgreementRate != null ? { consensusAgreementRate: metadata.consensusAgreementRate } : {}),
     ...(metadata?.tokenUsage != null ? { tokenUsage: metadata.tokenUsage } : {}),
   };
+
+  normalizePipelineTimestamps(pipelineResult, duration);
 
   // Helper: write a file only if content changed, and record it
   async function writeOutputFile(filename: string, content: string): Promise<void> {

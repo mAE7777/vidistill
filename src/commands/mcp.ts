@@ -7,10 +7,13 @@ import { GeminiClient } from '../gemini/client.js';
 import { RateLimiter } from '../gemini/rate-limiter.js';
 import { resolveInput } from '../input/resolver.js';
 import { handleYouTube, extractVideoId, fetchYouTubeMetadata } from '../input/youtube.js';
-import { handleLocalFile } from '../input/local-file.js';
-import { handleRemoteUrl } from '../input/remote.js';
+import { handleLocalFile, tryUnlink } from '../input/local-file.js';
+import { handleRemoteUrl, downloadRemote } from '../input/remote.js';
 import { detectDuration } from '../input/duration.js';
 import { runPipeline } from '../core/pipeline.js';
+import { runClipPipeline } from '../core/clip-pipeline.js';
+import { shouldSplitIntoClips, createClipPlan, splitVideo, cleanupClips } from '../core/splitter.js';
+import { uploadClips, deleteUploadedClips } from '../core/clip-uploader.js';
 import { generateOutput, slugify } from '../output/generator.js';
 import { readJsonFile, parseTimestamp } from '../lib/utils.js';
 import { MODELS } from '../gemini/models.js';
@@ -39,11 +42,13 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
   const resolved = resolveInput(input);
   const client = new GeminiClient(apiKey);
 
-  let fileUri: string;
-  let mimeType: string;
+  let fileUri: string | undefined;
+  let mimeType: string = 'video/mp4';
   let duration: number;
   let videoTitle: string;
   let ytAuthor: string | undefined;
+  let localFilePath: string | undefined;
+  let tempDownloadPath: string | undefined;
 
   if (resolved.type === 'youtube') {
     const result = await handleYouTube(resolved.value, client);
@@ -67,26 +72,38 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
       videoTitle = videoId != null ? `youtube-${videoId}` : resolved.value;
     }
   } else if (resolved.type === 'remote') {
-    const result = await handleRemoteUrl(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
+    const dl = await downloadRemote(resolved.value);
+    tempDownloadPath = dl.filePath;
+    localFilePath = dl.filePath;
+    videoTitle = dl.title;
     try {
       duration = await detectDuration({
-        geminiDuration: result.duration,
+        filePath: dl.filePath,
+        ytDlpDuration: dl.duration,
       });
     } catch {
-      duration = result.duration ?? 600;
+      duration = dl.duration ?? 600;
     }
-    videoTitle = result.title;
   } else {
-    const result = await handleLocalFile(resolved.value, client);
-    fileUri = result.fileUri;
-    mimeType = result.mimeType;
-    duration = await detectDuration({
-      filePath: resolved.value,
-      geminiDuration: result.duration,
-    });
+    localFilePath = resolved.value;
+    duration = await detectDuration({ filePath: resolved.value });
     videoTitle = basename(resolved.value, extname(resolved.value));
+  }
+
+  const useClipPipeline = localFilePath != null && shouldSplitIntoClips(duration);
+
+  if (!useClipPipeline && fileUri == null && localFilePath != null) {
+    try {
+      const result = await handleLocalFile(localFilePath, client);
+      fileUri = result.fileUri;
+      mimeType = result.mimeType;
+      if (result.duration != null) duration = result.duration;
+    } finally {
+      if (tempDownloadPath != null) {
+        tryUnlink(tempDownloadPath);
+        tempDownloadPath = undefined;
+      }
+    }
   }
 
   const model = MODELS.flash;
@@ -97,18 +114,54 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
   const rateLimiter = new RateLimiter();
 
   const startTime = Date.now();
-  const pipelineResult = await runPipeline({
-    client,
-    fileUri,
-    mimeType,
-    duration,
-    model,
-    context,
-    lang,
-    channelAuthor: ytAuthor,
-    rateLimiter,
-  });
+  let pipelineResult;
+
+  if (useClipPipeline && localFilePath != null) {
+    const clipPlan = createClipPlan(duration);
+    const clipInfos = await splitVideo(localFilePath, clipPlan);
+
+    if (tempDownloadPath != null) {
+      tryUnlink(tempDownloadPath);
+      tempDownloadPath = undefined;
+    }
+
+    const clipFileNames: string[] = [];
+    try {
+      const uploadedClips = await uploadClips(client, clipInfos, clipFileNames);
+
+      pipelineResult = await runClipPipeline({
+        client,
+        clips: uploadedClips,
+        totalDuration: duration,
+        model,
+        rateLimiter,
+        context,
+        lang,
+        channelAuthor: ytAuthor,
+      });
+    } finally {
+      cleanupClips(clipInfos);
+      await deleteUploadedClips(client, clipFileNames);
+    }
+  } else {
+    pipelineResult = await runPipeline({
+      client,
+      fileUri: fileUri!,
+      mimeType,
+      duration,
+      model,
+      context,
+      lang,
+      channelAuthor: ytAuthor,
+      rateLimiter,
+    });
+  }
+
   const elapsedMs = Date.now() - startTime;
+
+  if (tempDownloadPath != null) {
+    tryUnlink(tempDownloadPath);
+  }
 
   await generateOutput({
     pipelineResult,
@@ -122,7 +175,6 @@ async function analyzeVideo(input: string, context?: string, lang?: string): Pro
     ...(resolved.type === 'local' ? { inputFilePath: resolved.value } : {}),
   });
 
-  // Read synthesis.json for summary
   let summary = 'Analysis complete.';
   const synthesisPath = join(finalOutputDir, 'raw', 'synthesis.json');
   const synthesis = await readJsonFile<SynthesisResult>(synthesisPath);

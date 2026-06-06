@@ -119,6 +119,13 @@ describe('determineStrategy', () => {
       expect(result.passes).toContain('implicit');
     });
 
+    it('includes chat pass when hasChatbox is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'presentation', visualContent: { ...makeProfile().visualContent, hasChatbox: true } })
+      );
+      expect(result.passes).toContain('chat');
+    });
+
     it('includes people pass when hasMultipleSpeakers is true', () => {
       const result = determineStrategy(
         makeProfile({
@@ -152,6 +159,13 @@ describe('determineStrategy', () => {
       expect(result.passes).not.toContain('people');
       expect(result.passes).not.toContain('chat');
     });
+
+    it('includes chat pass when hasChatbox is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'conversation', visualContent: { ...makeProfile().visualContent, hasChatbox: true } })
+      );
+      expect(result.passes).toContain('chat');
+    });
   });
 
   describe('commentary type', () => {
@@ -164,6 +178,13 @@ describe('determineStrategy', () => {
       const result = determineStrategy(makeProfile({ type: 'commentary' }));
       expect(result.passes).not.toContain('people');
       expect(result.passes).not.toContain('chat');
+    });
+
+    it('includes chat pass when hasChatbox is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'commentary', visualContent: { ...makeProfile().visualContent, hasChatbox: true } })
+      );
+      expect(result.passes).toContain('chat');
     });
 
     it('includes code pass when hasCode is true', () => {
@@ -270,6 +291,13 @@ describe('determineStrategy', () => {
 
     it('does NOT include chat pass', () => {
       const result = determineStrategy(makeProfile({ type: 'audio' }));
+      expect(result.passes).not.toContain('chat');
+    });
+
+    it('does NOT include chat pass even when hasChatbox is true', () => {
+      const result = determineStrategy(
+        makeProfile({ type: 'audio', visualContent: { ...makeProfile().visualContent, hasChatbox: true } })
+      );
       expect(result.passes).not.toContain('chat');
     });
 

@@ -1,8 +1,9 @@
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import type { Pass2Result, VisualNote } from '../types/index.js';
+import type { Pass2Result, VisualNote, VisualRegion } from '../types/index.js';
 import { formatTime, parseTimestamp } from '../lib/utils.js';
+import { isChatRegionType } from './visual-signals.js';
 
 export interface KeyframeConfig {
   filePath: string;
@@ -25,6 +26,7 @@ export interface KeyframeResult {
 const DEFAULT_MAX_FRAMES = 50;
 const DEDUP_WINDOW_SECONDS = 3;
 const SLIDE_TYPES = new Set(['slide', 'diagram', 'whiteboard']);
+const CAPTURE_REGION_TYPES = new Set(['chat', 'comment_panel', 'sidebar']);
 
 function isRemoteUrl(input: string): boolean {
   return /^https?:\/\//i.test(input);
@@ -38,7 +40,7 @@ function collectTimestamps(pass2Results: (Pass2Result | null)[]): string[] {
 
     // Collect screen_timeline entries where screen_state changes
     let prevState: string | null = null;
-    for (const entry of result.screen_timeline) {
+    for (const entry of result.screen_timeline ?? []) {
       if (entry.screen_state !== prevState) {
         timestamps.push(entry.timestamp);
         prevState = entry.screen_state;
@@ -46,9 +48,15 @@ function collectTimestamps(pass2Results: (Pass2Result | null)[]): string[] {
     }
 
     // Collect visual_notes of slide/diagram/whiteboard type
-    for (const note of result.visual_notes) {
+    for (const note of result.visual_notes ?? []) {
       if (SLIDE_TYPES.has(note.visual_type)) {
         timestamps.push(note.timestamp);
+      }
+    }
+
+    for (const region of result.visual_regions ?? []) {
+      if (region.visible && CAPTURE_REGION_TYPES.has(region.region_type)) {
+        timestamps.push(region.timestamp);
       }
     }
   }
@@ -91,13 +99,15 @@ function findDescription(
 
   let bestNote: VisualNote | null = null;
   let bestNoteDist = Infinity;
+  let bestRegion: VisualRegion | null = null;
+  let bestRegionDist = Infinity;
   let fallbackState: string | null = null;
   let fallbackStateDist = Infinity;
 
   for (const result of pass2Results) {
     if (result == null) continue;
 
-    for (const note of result.visual_notes) {
+    for (const note of result.visual_notes ?? []) {
       const dist = Math.abs(parseTimestamp(note.timestamp) - targetSecs);
       if (dist < bestNoteDist) {
         bestNoteDist = dist;
@@ -105,7 +115,16 @@ function findDescription(
       }
     }
 
-    for (const entry of result.screen_timeline) {
+    for (const region of result.visual_regions ?? []) {
+      if (!region.visible || !isChatRegionType(region.region_type)) continue;
+      const dist = Math.abs(parseTimestamp(region.timestamp) - targetSecs);
+      if (dist < bestRegionDist) {
+        bestRegionDist = dist;
+        bestRegion = region;
+      }
+    }
+
+    for (const entry of result.screen_timeline ?? []) {
       const dist = Math.abs(parseTimestamp(entry.timestamp) - targetSecs);
       if (dist < fallbackStateDist) {
         fallbackStateDist = dist;
@@ -114,6 +133,10 @@ function findDescription(
     }
   }
 
+  if (bestRegion != null && bestRegionDist <= bestNoteDist) {
+    const sample = bestRegion.sample_text ? `: ${bestRegion.sample_text}` : '';
+    return `${bestRegion.label || bestRegion.region_type}${sample}`;
+  }
   if (bestNote != null) return bestNote.description;
   if (fallbackState != null) return fallbackState;
   return '';

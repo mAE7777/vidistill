@@ -20,7 +20,7 @@ export function formatDuration(seconds: number): string {
 }
 
 export function parseTimestamp(ts: string): number {
-  const parts = ts.trim().split(':').map(Number);
+  const parts = ts.trim().split(':').map((part) => Number(part.trim().replace(/s$/i, '')));
   if (parts.some((p) => !Number.isFinite(p))) return 0;
   if (parts.length === 3) {
     const [h, m, s] = parts;

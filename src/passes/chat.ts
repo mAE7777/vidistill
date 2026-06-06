@@ -4,6 +4,7 @@ import { SYSTEM_INSTRUCTION_PASS_3C, withLanguage } from '../constants/prompts.j
 import { SCHEMA_PASS_3C } from '../gemini/schemas.js';
 import { formatTime } from '../lib/utils.js';
 import type { Segment, Pass2Result, ChatExtraction } from '../types/index.js';
+import { isChatRegionType } from '../core/visual-signals.js';
 
 export interface RunChatExtractionParams {
   client: GeminiClient;
@@ -18,6 +19,7 @@ export interface RunChatExtractionParams {
 
 export async function runChatExtraction(params: RunChatExtractionParams): Promise<ChatExtraction> {
   const { client, fileUri, mimeType, segment, model, resolution, pass2Result, lang } = params;
+  const visualRegions = pass2Result?.visual_regions ?? [];
 
   const visualNotesText =
     pass2Result != null && (pass2Result.visual_notes?.length ?? 0) > 0
@@ -25,6 +27,20 @@ export async function runChatExtraction(params: RunChatExtractionParams): Promis
           .map((n) => `[${n.timestamp}] ${n.visual_type}: ${n.description}`)
           .join('\n')
       : '[No visual context available for this segment]';
+
+  const visualRegionsText =
+    visualRegions.length > 0
+      ? visualRegions
+          .map((r) => {
+            const bbox =
+              r.bbox != null
+                ? ` bbox=(${r.bbox.x},${r.bbox.y},${r.bbox.width},${r.bbox.height})`
+                : '';
+            const focus = isChatRegionType(r.region_type) ? ' FOCUS_CHAT_REGION' : '';
+            return `[${r.timestamp}] ${r.region_type}: ${r.label}${bbox} visible=${r.visible} confidence=${r.confidence}${focus}\nsample: ${r.sample_text}`;
+          })
+          .join('\n')
+      : '[No detected visual regions available for this segment]';
 
   const codeBlocksText =
     pass2Result != null && (pass2Result.code_blocks?.length ?? 0) > 0
@@ -36,6 +52,9 @@ export async function runChatExtraction(params: RunChatExtractionParams): Promis
   const contextText = [
     'VISUAL NOTES FROM THIS SEGMENT:',
     visualNotesText,
+    '',
+    'DETECTED VISUAL REGIONS FROM THIS SEGMENT:',
+    visualRegionsText,
     '',
     'CODE BLOCKS FROM THIS SEGMENT:',
     codeBlocksText,

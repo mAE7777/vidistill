@@ -70,5 +70,9 @@ export async function runVisual(params: RunVisualParams): Promise<Pass2Result> {
     throw new Error('Empty response from Gemini Pass 2');
   }
 
-  return result as Pass2Result;
+  const pass2 = result as Pass2Result;
+  pass2.visual_notes = Array.isArray(pass2.visual_notes) ? pass2.visual_notes : [];
+  pass2.screen_timeline = Array.isArray(pass2.screen_timeline) ? pass2.screen_timeline : [];
+  pass2.visual_regions = Array.isArray(pass2.visual_regions) ? pass2.visual_regions : [];
+  return pass2;
 }

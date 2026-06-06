@@ -28,6 +28,49 @@ export interface RemoteUrlResult {
   uploadedFileName?: string;
 }
 
+export interface DownloadResult {
+  filePath: string;
+  duration: number | undefined;
+  title: string;
+}
+
+/**
+ * Download a remote video via yt-dlp without uploading to Gemini.
+ * Caller is responsible for cleaning up the temp file (filePath).
+ */
+export async function downloadRemote(url: string): Promise<DownloadResult> {
+  const binaryPath = findYtDlp();
+  if (!binaryPath) {
+    throw new Error(
+      'yt-dlp is required for non-YouTube URLs. Install: brew install yt-dlp',
+    );
+  }
+
+  const ytdlp = new YtDlp({ binaryPath });
+
+  let title: string = url;
+  let duration: number | undefined;
+
+  try {
+    const info = await ytdlp.getInfoAsync<'video'>(url);
+    if (info.title) title = info.title;
+    if (typeof info.duration === 'number' && info.duration > 0) {
+      duration = info.duration;
+    }
+  } catch {
+    // metadata fetch failure is non-fatal
+  }
+
+  const outPath = tempPath();
+
+  await ytdlp.downloadAsync(url, {
+    output: outPath,
+    format: DOWNLOAD_FORMAT,
+  });
+
+  return { filePath: outPath, duration, title };
+}
+
 export async function handleRemoteUrl(
   url: string,
   client: GeminiClient,

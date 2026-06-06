@@ -12,14 +12,17 @@ export function determineStrategy(profile: VideoProfile): PassStrategy {
     passes.add('code');
   }
 
+  // Chat sidebars are useful visual content in presentations, lectures, and
+  // stream recordings too, not only in meeting layouts.
+  if (type !== 'audio' && visualContent.hasChatbox) {
+    passes.add('chat');
+  }
+
   switch (type) {
     case 'coding':
       break;
     case 'meeting':
       passes.add('people');
-      if (visualContent.hasChatbox) {
-        passes.add('chat');
-      }
       passes.add('implicit');
       break;
     case 'lecture':
