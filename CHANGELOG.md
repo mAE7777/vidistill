@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.0] - 2026-06-06
+
+### Added
+- Clip-based processing for long videos — local files and downloaded URLs over 25 minutes are split into 20-minute clips (30-second overlap) via ffmpeg, uploaded and processed in parallel across 4 lanes, with all timestamps mapped back to the original video timeline
+- Visual region detection — scene analysis now identifies on-screen regions (chat panels, comment sidebars) with bounding boxes; detected regions decide whether the chat pass runs and guide which frames are captured as chat screenshots
+- Bare-domain link detection — links.md now catches `www.` and bare-domain mentions (e.g. `example.com`) alongside full URLs, normalized to https
+- Pre-pipeline cost estimates account for clip-based runs (per-clip pass counts and upload overhead)
+
+### Changed
+- Non-YouTube URLs download first, then route through the same split-or-upload decision as local files (previously uploaded directly without a local copy)
+- MCP `analyze_video` routes long local and remote videos through the clip pipeline, same as the CLI
+- Keyframe timestamp selection prefers detected chat regions when choosing chat screenshots
+
+### Fixed
+- Keyframe extraction no longer crashes when Gemini responses omit `screen_timeline` or `visual_notes` fields
+
+### Dependencies
+- `@google/genai` ^1.52.0, `@modelcontextprotocol/sdk` ^1.29.0 — clears all known audit advisories in the dependency tree (35 resolved, including 1 critical and 7 high)
+
 ## [0.8.0] - 2026-04-20
 
 ### Added
