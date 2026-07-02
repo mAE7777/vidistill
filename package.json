@@ -1,7 +1,7 @@
 {
   "name": "vidistill",
   "version": "0.9.0",
-  "description": "Video intelligence distiller — extract structured notes, transcripts, and insights from any video using Gemini",
+  "description": "CLI and MCP server that turns videos into transcripts, visual notes, reconstructed code, and structured markdown",
   "type": "module",
   "license": "MIT",
   "keywords": [
