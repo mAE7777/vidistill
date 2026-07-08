@@ -1,8 +1,14 @@
 # vidistill
 
-Turn coding tutorials into source trees your AI editor can read.
+[![npm version](https://img.shields.io/npm/v/vidistill.svg)](https://www.npmjs.com/package/vidistill)
+[![license](https://img.shields.io/npm/l/vidistill.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/vidistill.svg)](https://nodejs.org)
 
-vidistill watches a video — YouTube, local file, or any yt-dlp-supported URL — and distills it into structured markdown, reconstructed source files, transcripts, and speaker-attributed notes. Feed it a 40-minute React tutorial and get back the exact files the instructor typed, a timestamped transcript, and a navigable guide. Feed it a team meeting and get action items, speaker profiles, and chat messages.
+Turn long video explanations into a folder your AI editor can read.
+
+vidistill is a CLI and MCP server for distilling YouTube videos, local files, and yt-dlp-supported URLs into structured markdown, transcripts, visual notes, screenshots, reconstructed source files, and speaker-attributed notes.
+
+It is built for videos where the screen matters as much as the audio: coding tutorials, lectures with slides, whiteboard talks, live demos, streams with chat, and technical meetings. Instead of finishing a 40-minute tutorial with a few screenshots and a vague memory, you get a directory with the transcript, visual notes, reconstructed code, a code timeline, links, chat, people, and action items. Point an AI editor at that directory and ask questions against the artifacts.
 
 ## MCP Quick-Start
 

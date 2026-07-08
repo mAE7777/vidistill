@@ -4,13 +4,30 @@
   "description": "CLI and MCP server that turns videos into transcripts, visual notes, reconstructed code, and structured markdown",
   "type": "module",
   "license": "MIT",
+  "author": "Sitao Ma",
+  "homepage": "https://github.com/mAE7777/vidistill#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mAE7777/vidistill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mAE7777/vidistill/issues"
+  },
   "keywords": [
     "video",
     "ai",
     "gemini",
     "transcript",
+    "transcription",
     "notes",
-    "cli"
+    "cli",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "youtube",
+    "yt-dlp",
+    "obsidian",
+    "video-analysis"
   ],
   "engines": {
     "node": ">=22"
