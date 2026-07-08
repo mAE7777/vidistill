@@ -1,9 +1,10 @@
 {
   "name": "vidistill",
-  "version": "0.9.0",
-  "description": "CLI and MCP server that turns videos into transcripts, visual notes, reconstructed code, and structured markdown",
+  "version": "0.9.1",
+  "description": "CLI and MCP server that turns long videos into transcripts, visual notes, reconstructed code, and structured markdown your AI editor can read",
   "type": "module",
   "license": "MIT",
+  "packageManager": "pnpm@10.17.0",
   "author": "Sitao Ma",
   "homepage": "https://github.com/mAE7777/vidistill#readme",
   "repository": {

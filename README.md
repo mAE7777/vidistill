@@ -1,7 +1,8 @@
 # vidistill
 
+[![ci](https://github.com/mAE7777/vidistill/actions/workflows/ci.yml/badge.svg)](https://github.com/mAE7777/vidistill/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/vidistill.svg)](https://www.npmjs.com/package/vidistill)
-[![license](https://img.shields.io/npm/l/vidistill.svg)](./LICENSE)
+[![license](https://img.shields.io/npm/l/vidistill.svg)](https://github.com/mAE7777/vidistill/blob/main/LICENSE)
 [![node](https://img.shields.io/node/v/vidistill.svg)](https://nodejs.org)
 
 Turn long video explanations into a folder your AI editor can read.

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.1] - 2026-07-07
+
+### Added
+- `repository`, `homepage`, and `bugs` metadata in package.json, plus expanded keywords (mcp, model-context-protocol, claude, youtube, obsidian) for registry discoverability
+- Continuous integration running the build and full test suite on every push
+
+### Changed
+- README leads with badges and a broader intro covering lectures, talks, demos, and meetings, not just coding tutorials
+- Sharpened package description
+
 ## [0.9.0] - 2026-06-06
 
 ### Added
